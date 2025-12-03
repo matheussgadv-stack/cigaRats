@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Camera, MessageCircle, Trophy, Flame, Wind, User, Send, X, PlusCircle, LogOut, Globe, AlertCircle, Settings, Edit2, Image as ImageIcon, Trash2, AlertTriangle } from 'lucide-react';
+import { Camera, MessageCircle, Trophy, Flame, Wind, User, Send, X, PlusCircle, LogOut, Globe, AlertCircle, Settings, Edit2, Image as ImageIcon, Trash2, AlertTriangle, Users, Search, Crown, ArrowRight, DoorOpen, UserPlus, UserCheck, UserMinus } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
   getAuth, 
@@ -21,6 +21,7 @@ import {
   updateDoc, 
   increment, 
   arrayUnion,
+  arrayRemove,
   setDoc,
   getDoc,
   deleteDoc,
@@ -28,7 +29,6 @@ import {
 } from 'firebase/firestore';
 
 // --- CONFIGURAÇÃO DO FIREBASE ---
-// Chaves configuradas para o projeto "cigarats"
 const firebaseConfig = {
   apiKey: "AIzaSyAu4CdKcPyB3Cp-EOgH_IXC_Iunip9L3wo",
   authDomain: "cigarats.firebaseapp.com",
@@ -47,6 +47,7 @@ const db = getFirestore(app);
 // Coleções
 const USERS_COLLECTION = 'users';
 const POSTS_COLLECTION = 'posts';
+const GROUPS_COLLECTION = 'groups';
 
 // --- UTILITÁRIOS ---
 
@@ -79,7 +80,6 @@ const compressImage = (file) => {
   });
 };
 
-// Avatars pré-definidos (Seeds do DiceBear)
 const PRESET_AVATARS = [
   "https://api.dicebear.com/7.x/avataaars/svg?seed=Felix",
   "https://api.dicebear.com/7.x/avataaars/svg?seed=Aneka",
@@ -94,10 +94,12 @@ const PRESET_AVATARS = [
 export default function App() {
   const [user, setUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
-  const [view, setView] = useState('loading'); // loading, login, feed, ranking, upload, settings
+  const [view, setView] = useState('loading'); // loading, login, feed, ranking, community, group_detail, settings, upload
   const [posts, setPosts] = useState([]);
-  const [leaderboard, setLeaderboard] = useState([]);
-  const [usersMap, setUsersMap] = useState({}); // Mapa para acesso rápido aos dados de usuário (uid -> data)
+  const [usersList, setUsersList] = useState([]);
+  const [usersMap, setUsersMap] = useState({});
+  const [groups, setGroups] = useState([]);
+  const [selectedGroup, setSelectedGroup] = useState(null);
   const [loading, setLoading] = useState(true);
 
   // Inicialização de Auth
@@ -126,34 +128,42 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Listeners de Dados
+  // Listeners
   useEffect(() => {
     if (!user) return;
 
+    // Posts
     const qPosts = query(collection(db, POSTS_COLLECTION), orderBy('timestamp', 'desc'));
     const unsubPosts = onSnapshot(qPosts, (snapshot) => {
       setPosts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    }, (error) => console.error("Erro posts:", error));
+    });
 
+    // Usuários (Atualização em tempo real para ver mudanças de amigos)
     const qUsers = query(collection(db, USERS_COLLECTION));
     const unsubUsers = onSnapshot(qUsers, (snapshot) => {
       const usersData = snapshot.docs.map(doc => doc.data());
       
-      // Criar mapa para lookup rápido
       const uMap = {};
       usersData.forEach(u => uMap[u.uid] = u);
       setUsersMap(uMap);
-
+      
       usersData.sort((a, b) => (b.xp || 0) - (a.xp || 0));
-      setLeaderboard(usersData);
+      setUsersList(usersData);
       
       const myProfile = usersData.find(u => u.uid === user.uid);
       if (myProfile) setUserProfile(myProfile);
-    }, (error) => console.error("Erro ranking:", error));
+    });
+
+    // Grupos
+    const qGroups = query(collection(db, GROUPS_COLLECTION), orderBy('createdAt', 'desc'));
+    const unsubGroups = onSnapshot(qGroups, (snapshot) => {
+      setGroups(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
 
     return () => {
       unsubPosts();
       unsubUsers();
+      unsubGroups();
     };
   }, [user]);
 
@@ -166,6 +176,7 @@ export default function App() {
         name: googleUser.displayName || "Fumante Misterioso",
         xp: 0,
         cigarettes: 0,
+        friends: [], // Inicializa lista de amigos vazia
         avatar: googleUser.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${googleUser.uid}`,
         joinedAt: serverTimestamp(),
         authMethod: 'google'
@@ -188,6 +199,7 @@ export default function App() {
         name: nickname,
         xp: 0,
         cigarettes: 0,
+        friends: [], // Inicializa lista de amigos vazia
         avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${nickname}&backgroundColor=b6e3f4`,
         joinedAt: serverTimestamp(),
         authMethod: 'anonymous'
@@ -195,20 +207,97 @@ export default function App() {
       await setDoc(doc(db, USERS_COLLECTION, currentUser.uid), userData);
       setUserProfile(userData);
       setView('feed');
-    } catch (e) {
-      console.error(e);
-      alert("Erro ao criar perfil. Tente recarregar.");
-    }
+    } catch (e) { alert("Erro ao criar perfil."); }
   };
+
+  // --- AMIGOS (FOLLOW SYSTEM) ---
+
+  const handleFollowUser = async (targetUid) => {
+    try {
+        const userRef = doc(db, USERS_COLLECTION, user.uid);
+        await updateDoc(userRef, {
+            friends: arrayUnion(targetUid)
+        });
+        // Atualização otimista local
+        setUserProfile(prev => ({...prev, friends: [...(prev.friends || []), targetUid]}));
+    } catch (e) { console.error("Erro ao seguir:", e); }
+  };
+
+  const handleUnfollowUser = async (targetUid) => {
+    try {
+        const userRef = doc(db, USERS_COLLECTION, user.uid);
+        await updateDoc(userRef, {
+            friends: arrayRemove(targetUid)
+        });
+        // Atualização otimista local
+        setUserProfile(prev => ({...prev, friends: (prev.friends || []).filter(id => id !== targetUid)}));
+    } catch (e) { console.error("Erro ao deixar de seguir:", e); }
+  };
+
+  // --- GRUPOS ---
+
+  const handleCreateGroup = async (groupName, groupDesc) => {
+    if (!groupName.trim()) return;
+    try {
+      const newGroup = {
+        name: groupName,
+        description: groupDesc || "Sem descrição",
+        adminUid: user.uid,
+        adminName: userProfile.name,
+        members: [user.uid],
+        createdAt: serverTimestamp()
+      };
+      const docRef = await addDoc(collection(db, GROUPS_COLLECTION), newGroup);
+      setSelectedGroup({ id: docRef.id, ...newGroup });
+      setView('group_detail');
+    } catch (e) { alert("Erro ao criar grupo."); }
+  };
+
+  const handleJoinGroup = async (groupId) => {
+    try {
+      const groupRef = doc(db, GROUPS_COLLECTION, groupId);
+      await updateDoc(groupRef, { members: arrayUnion(user.uid) });
+      if (selectedGroup && selectedGroup.id === groupId) {
+         setSelectedGroup(prev => ({...prev, members: [...prev.members, user.uid]}));
+      }
+    } catch (e) { console.error(e); }
+  };
+
+  const handleLeaveGroup = async (groupId) => {
+    if (!window.confirm("Sair do grupo?")) return;
+    try {
+      const groupRef = doc(db, GROUPS_COLLECTION, groupId);
+      await updateDoc(groupRef, { members: arrayRemove(user.uid) });
+      setView('community');
+    } catch (e) { console.error(e); }
+  };
+
+  const handleDeleteGroup = async (groupId) => {
+    if (!window.confirm("Excluir grupo permanentemente?")) return;
+    try {
+        await deleteDoc(doc(db, GROUPS_COLLECTION, groupId));
+        setView('community');
+    } catch (e) { console.error(e); }
+  };
+
+  const handleKickMember = async (groupId, memberUid) => {
+    if (!window.confirm("Remover este usuário do grupo?")) return;
+    try {
+        const groupRef = doc(db, GROUPS_COLLECTION, groupId);
+        await updateDoc(groupRef, { members: arrayRemove(memberUid) });
+        if (selectedGroup) {
+            setSelectedGroup(prev => ({...prev, members: prev.members.filter(m => m !== memberUid)}));
+        }
+    } catch (e) { console.error(e); }
+  };
+
+  // --- OUTRAS AÇÕES ---
 
   const handleGoogleLogin = async () => {
     try {
       const provider = new GoogleAuthProvider();
       await signInWithPopup(auth, provider);
-    } catch (error) {
-      console.error(error);
-      alert("Erro ao entrar com Google. Verifique domínios autorizados.");
-    }
+    } catch (error) { alert("Erro ao entrar com Google."); }
   };
 
   const handleGuestLogin = async (nickname) => {
@@ -226,25 +315,13 @@ export default function App() {
   };
 
   const handleDeleteAccount = async () => {
-    const confirmed = window.confirm("TEM CERTEZA? \n\nIsso apagará seu perfil, seu ranking e seus cigarros para sempre. Essa ação não pode ser desfeita.");
-    if (!confirmed) return;
-
+    if (!window.confirm("TEM CERTEZA? Isso apaga tudo.")) return;
     try {
         setLoading(true);
-        // 1. Apagar documento do Firestore
         await deleteDoc(doc(db, USERS_COLLECTION, user.uid));
-        
-        // 2. Apagar usuário da Autenticação
         await deleteUser(auth.currentUser);
-        
-        // O onAuthStateChanged vai lidar com o redirecionamento para login
     } catch (error) {
-        console.error("Erro ao excluir conta:", error);
-        if (error.code === 'auth/requires-recent-login') {
-            alert("Por segurança, você precisa ter feito login recentemente para excluir a conta. \n\nPor favor, saia, entre novamente e tente excluir.");
-        } else {
-            alert("Erro ao excluir conta. Tente novamente.");
-        }
+        alert("Erro. Tente sair e entrar novamente.");
         setLoading(false);
     }
   };
@@ -267,37 +344,21 @@ export default function App() {
   };
 
   const handleDeletePost = async (postId) => {
-    if (!window.confirm("Apagar postagem? Você perderá 10XP e 1 cigarro do ranking.")) return;
+    if (!window.confirm("Apagar post? -10 XP.")) return;
     try {
-        // Excluir post
         await deleteDoc(doc(db, POSTS_COLLECTION, postId));
-        
-        // Penalizar usuário
         const userRef = doc(db, USERS_COLLECTION, user.uid);
-        await updateDoc(userRef, { 
-            cigarettes: increment(-1), 
-            xp: increment(-10) 
-        });
-    } catch (e) {
-        console.error("Erro ao excluir:", e);
-        alert("Erro ao excluir post.");
-    }
+        await updateDoc(userRef, { cigarettes: increment(-1), xp: increment(-10) });
+    } catch (e) { console.error(e); }
   };
 
   const handleUpdateProfile = async (newName, newAvatar) => {
     try {
       const userRef = doc(db, USERS_COLLECTION, user.uid);
-      await updateDoc(userRef, {
-        name: newName,
-        avatar: newAvatar
-      });
-      // Atualizar localmente também para feedback instantâneo
+      await updateDoc(userRef, { name: newName, avatar: newAvatar });
       setUserProfile(prev => ({ ...prev, name: newName, avatar: newAvatar }));
       setView('feed');
-    } catch (e) {
-      console.error("Erro ao atualizar:", e);
-      alert("Erro ao salvar perfil.");
-    }
+    } catch (e) { alert("Erro ao salvar."); }
   };
 
   const handleLike = async (postId, currentLikes) => {
@@ -313,7 +374,7 @@ export default function App() {
   const handleComment = async (postId, text) => {
     if (!text.trim()) return;
     const postRef = doc(db, POSTS_COLLECTION, postId);
-    const newComment = { authorUid: user.uid, text: text, timestamp: Date.now() }; // Salvando UID em vez de nome
+    const newComment = { authorUid: user.uid, text: text, timestamp: Date.now() };
     await updateDoc(postRef, { comments: arrayUnion(newComment) });
   };
 
@@ -321,7 +382,6 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans flex justify-center">
-      
       {view === 'login' && (
         <div className="w-full max-w-md">
           <LoginScreen onGoogle={handleGoogleLogin} onGuest={handleGuestLogin} />
@@ -330,11 +390,8 @@ export default function App() {
 
       {view !== 'login' && (
         <div className="flex w-full max-w-6xl gap-6">
-          
-          {/* SIDEBAR (Desktop) / TOPBAR (Mobile) */}
+          {/* SIDEBAR */}
           <aside className="fixed bottom-0 left-0 w-full z-20 bg-slate-900 border-t border-slate-800 md:static md:w-64 md:h-screen md:bg-transparent md:border-r md:border-t-0 md:flex md:flex-col md:p-4">
-            
-            {/* Logo e Status (Desktop apenas) */}
             <div className="hidden md:block mb-8">
               <div className="flex items-center gap-2 mb-4">
                 <Flame className="text-orange-500 w-8 h-8" />
@@ -357,36 +414,24 @@ export default function App() {
               )}
             </div>
 
-            {/* Navegação */}
             <nav className="flex justify-around items-center h-16 md:h-auto md:flex-col md:items-start md:space-y-4 md:flex-1">
               <NavButton icon={Wind} label="Feed" active={view === 'feed'} onClick={() => setView('feed')} />
+              <NavButton icon={Users} label="Comunidade" active={view === 'community' || view === 'group_detail'} onClick={() => setView('community')} />
               <NavButton icon={Trophy} label="Ranking" active={view === 'ranking'} onClick={() => setView('ranking')} />
               <NavButton icon={Settings} label="Perfil" active={view === 'settings'} onClick={() => setView('settings')} />
               
               <div className="md:hidden relative -top-6">
-                <button 
-                  onClick={() => setView('upload')}
-                  className="bg-orange-600 hover:bg-orange-500 text-white rounded-full p-4 shadow-lg shadow-orange-900/50 transition-transform active:scale-95 border-4 border-slate-950"
-                >
+                <button onClick={() => setView('upload')} className="bg-orange-600 hover:bg-orange-500 text-white rounded-full p-4 shadow-lg active:scale-95 border-4 border-slate-950">
                   <PlusCircle className="w-8 h-8" />
                 </button>
               </div>
 
-              {/* Botão Postar Desktop */}
-              <button 
-                  onClick={() => setView('upload')}
-                  className="hidden md:flex w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-3 rounded-xl items-center justify-center gap-2 transition-transform hover:scale-105 shadow-lg shadow-orange-900/20"
-                >
-                  <PlusCircle className="w-5 h-5" />
-                  Fumar
+              <button onClick={() => setView('upload')} className="hidden md:flex w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-3 rounded-xl items-center justify-center gap-2 transition-transform hover:scale-105 shadow-lg">
+                  <PlusCircle className="w-5 h-5" /> Fumar
               </button>
 
-              <button 
-                onClick={handleLogout} 
-                className="hidden md:flex items-center gap-3 text-slate-500 hover:text-red-500 px-3 py-2 transition-colors mt-auto"
-              >
-                <LogOut className="w-6 h-6" />
-                <span className="font-bold">Sair</span>
+              <button onClick={handleLogout} className="hidden md:flex items-center gap-3 text-slate-500 hover:text-red-500 px-3 py-2 transition-colors mt-auto">
+                <LogOut className="w-6 h-6" /> <span className="font-bold">Sair</span>
               </button>
             </nav>
           </aside>
@@ -406,18 +451,31 @@ export default function App() {
               )}
             </header>
 
-            {view === 'feed' && <Feed posts={posts} usersMap={usersMap} currentUserUid={user?.uid} onLike={handleLike} onComment={handleComment} onDelete={handleDeletePost} />}
-            {view === 'ranking' && <Ranking leaderboard={leaderboard} currentUserUid={user?.uid} />}
+            {view === 'feed' && <Feed posts={posts} usersMap={usersMap} userProfile={userProfile} currentUserUid={user?.uid} onLike={handleLike} onComment={handleComment} onDelete={handleDeletePost} />}
+            {view === 'ranking' && <Ranking users={usersList} title="RANKING GLOBAL" subtitle="Quem vai precisar de um pulmão novo?" currentUserUid={user?.uid} />}
+            {view === 'community' && (
+                <CommunityScreen 
+                    users={usersList} 
+                    groups={groups} 
+                    userProfile={userProfile}
+                    currentUserUid={user?.uid}
+                    onCreateGroup={handleCreateGroup} 
+                    onSelectGroup={(g) => { setSelectedGroup(g); setView('group_detail'); }} 
+                    onFollow={handleFollowUser}
+                    onUnfollow={handleUnfollowUser}
+                />
+            )}
+            {view === 'group_detail' && <GroupDetails group={selectedGroup} usersMap={usersMap} currentUserUid={user?.uid} onJoin={handleJoinGroup} onLeave={handleLeaveGroup} onDelete={handleDeleteGroup} onKick={handleKickMember} onBack={() => setView('community')} />}
             {view === 'settings' && <SettingsScreen profile={userProfile} onUpdate={handleUpdateProfile} onDeleteAccount={handleDeleteAccount} />}
             {view === 'upload' && <UploadScreen onPost={handlePost} onCancel={() => setView('feed')} />}
           </main>
 
-          {/* RIGHT SIDEBAR (Desktop Ranking Preview) */}
+          {/* RIGHT SIDEBAR */}
           <aside className="hidden lg:block w-80 p-4 pt-8 sticky top-0 h-screen overflow-hidden">
             <div className="bg-slate-900 rounded-2xl p-4 border border-slate-800">
               <h3 className="font-black text-slate-400 mb-4 text-sm uppercase tracking-wider">Top Fumantes</h3>
               <div className="space-y-3">
-                {leaderboard.slice(0, 5).map((u, i) => (
+                {usersList.slice(0, 5).map((u, i) => (
                    <div key={u.uid} className="flex items-center gap-2 text-sm">
                       <span className={`font-bold w-4 ${i===0?'text-yellow-400':'text-slate-500'}`}>{i+1}</span>
                       <img src={u.avatar} className="w-6 h-6 rounded-full bg-slate-800" />
@@ -428,7 +486,6 @@ export default function App() {
               </div>
             </div>
           </aside>
-
         </div>
       )}
     </div>
@@ -436,6 +493,195 @@ export default function App() {
 }
 
 // --- TELAS ---
+
+function CommunityScreen({ users, groups, userProfile, currentUserUid, onCreateGroup, onSelectGroup, onFollow, onUnfollow }) {
+  const [tab, setTab] = useState('people'); // groups, people
+  const [searchTerm, setSearchTerm] = useState('');
+  const [isCreating, setIsCreating] = useState(false);
+  const [newGroupName, setNewGroupName] = useState('');
+  const [newGroupDesc, setNewGroupDesc] = useState('');
+
+  // Filtros
+  const filteredUsers = users.filter(u => u.name.toLowerCase().includes(searchTerm.toLowerCase()));
+  const filteredGroups = groups.filter(g => g.name.toLowerCase().includes(searchTerm.toLowerCase()));
+
+  // Lista de amigos do usuário atual
+  const myFriends = userProfile?.friends || [];
+
+  return (
+    <div className="p-4 animate-in fade-in">
+      {/* Header e Busca */}
+      <div className="mb-6">
+        <h2 className="text-2xl font-black italic mb-4 text-white flex items-center gap-2">
+          <Users className="w-6 h-6" /> COMUNIDADE
+        </h2>
+        
+        <div className="relative mb-4">
+          <Search className="absolute left-3 top-3 w-5 h-5 text-slate-500" />
+          <input 
+            type="text" 
+            placeholder={tab === 'groups' ? "Buscar grupos..." : "Buscar pessoas..."}
+            className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-10 pr-4 py-3 text-white focus:ring-2 focus:ring-orange-500 outline-none"
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+          />
+        </div>
+
+        <div className="flex gap-2">
+          <button onClick={() => setTab('people')} className={`flex-1 py-2 rounded-lg font-bold text-sm transition-colors ${tab==='people' ? 'bg-orange-600 text-white' : 'bg-slate-900 text-slate-400'}`}>Pessoas</button>
+          <button onClick={() => setTab('groups')} className={`flex-1 py-2 rounded-lg font-bold text-sm transition-colors ${tab==='groups' ? 'bg-orange-600 text-white' : 'bg-slate-900 text-slate-400'}`}>Grupos</button>
+        </div>
+      </div>
+
+      {/* Conteúdo Pessoas */}
+      {tab === 'people' && (
+        <div className="space-y-3">
+          {filteredUsers.map(u => {
+            const isMe = u.uid === currentUserUid;
+            const isFriend = myFriends.includes(u.uid);
+
+            return (
+                <div key={u.uid} className="flex items-center justify-between bg-slate-900 p-3 rounded-xl border border-slate-800">
+                    <div className="flex items-center gap-3">
+                        <img src={u.avatar} className="w-10 h-10 rounded-full bg-slate-800 object-cover" />
+                        <div>
+                            <p className="font-bold text-slate-200 flex items-center gap-2">
+                                {u.name}
+                                {isFriend && <span className="text-[10px] bg-green-900 text-green-400 px-1.5 rounded border border-green-800">Amigo</span>}
+                            </p>
+                            <p className="text-xs text-slate-500">{u.cigarettes} cigarros</p>
+                        </div>
+                    </div>
+                    
+                    {!isMe && (
+                        isFriend ? (
+                            <button onClick={() => onUnfollow(u.uid)} className="p-2 text-slate-500 hover:text-red-500 hover:bg-slate-800 rounded-lg transition-colors" title="Deixar de seguir">
+                                <UserMinus className="w-5 h-5" />
+                            </button>
+                        ) : (
+                            <button onClick={() => onFollow(u.uid)} className="p-2 text-orange-500 hover:text-white hover:bg-orange-600 rounded-lg transition-colors" title="Seguir">
+                                <UserPlus className="w-5 h-5" />
+                            </button>
+                        )
+                    )}
+                </div>
+            );
+          })}
+          {filteredUsers.length === 0 && <p className="text-center text-slate-500 text-sm mt-4">Ninguém encontrado.</p>}
+        </div>
+      )}
+
+      {/* Conteúdo Grupos */}
+      {tab === 'groups' && (
+        <div className="space-y-4">
+          {!isCreating ? (
+            <button onClick={() => setIsCreating(true)} className="w-full bg-slate-800 border-2 border-dashed border-slate-700 hover:border-orange-500 text-slate-400 hover:text-orange-500 font-bold py-3 rounded-xl transition-all flex items-center justify-center gap-2">
+              <PlusCircle className="w-5 h-5" /> Criar Novo Grupo
+            </button>
+          ) : (
+            <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 animate-in slide-in-from-top-2">
+              <h3 className="font-bold text-white mb-3">Novo Grupo</h3>
+              <input type="text" placeholder="Nome do Grupo" className="w-full bg-slate-950 p-2 rounded border border-slate-700 mb-2 text-white" value={newGroupName} onChange={e => setNewGroupName(e.target.value)} maxLength={25} />
+              <input type="text" placeholder="Descrição curta (opcional)" className="w-full bg-slate-950 p-2 rounded border border-slate-700 mb-3 text-white text-sm" value={newGroupDesc} onChange={e => setNewGroupDesc(e.target.value)} maxLength={50} />
+              <div className="flex gap-2">
+                <button onClick={() => onCreateGroup(newGroupName, newGroupDesc)} className="flex-1 bg-green-600 hover:bg-green-500 text-white font-bold py-2 rounded">Criar</button>
+                <button onClick={() => setIsCreating(false)} className="flex-1 bg-slate-800 hover:bg-slate-700 text-white font-bold py-2 rounded">Cancelar</button>
+              </div>
+            </div>
+          )}
+
+          {filteredGroups.map(group => (
+            <div key={group.id} onClick={() => onSelectGroup(group)} className="bg-slate-900 p-4 rounded-xl border border-slate-800 hover:border-orange-500/50 cursor-pointer transition-all active:scale-[0.99] flex justify-between items-center">
+              <div>
+                <h3 className="font-bold text-white">{group.name}</h3>
+                <p className="text-xs text-slate-400">{group.description}</p>
+                <p className="text-xs text-slate-500 mt-1">{group.members?.length || 0} membros</p>
+              </div>
+              <ArrowRight className="text-slate-600 w-5 h-5" />
+            </div>
+          ))}
+          {filteredGroups.length === 0 && <p className="text-center text-slate-500 text-sm mt-4">Nenhum grupo encontrado.</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function GroupDetails({ group, usersMap, currentUserUid, onJoin, onLeave, onDelete, onKick, onBack }) {
+  const [activeTab, setActiveTab] = useState('ranking'); // ranking, members
+  const members = group.members?.map(uid => usersMap[uid]).filter(Boolean) || [];
+  const rankedMembers = [...members].sort((a, b) => (b.xp || 0) - (a.xp || 0));
+  const isMember = group.members?.includes(currentUserUid);
+  const isAdmin = group.adminUid === currentUserUid;
+
+  return (
+    <div className="p-4 animate-in fade-in slide-in-from-right-4">
+      <button onClick={onBack} className="flex items-center gap-1 text-slate-400 hover:text-white mb-4 text-sm font-bold"><ArrowRight className="rotate-180 w-4 h-4" /> Voltar</button>
+      
+      <div className="bg-slate-900 rounded-2xl p-6 border border-slate-800 mb-6 text-center relative overflow-hidden">
+        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-orange-500 to-red-600"></div>
+        <h2 className="text-2xl font-black text-white mb-1">{group.name}</h2>
+        <p className="text-slate-400 text-sm mb-4">{group.description}</p>
+        
+        {isMember ? (
+          <div className="flex gap-2 justify-center">
+             <span className="bg-green-900/30 text-green-500 border border-green-900/50 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1">
+                <Users className="w-3 h-3" /> Membro
+             </span>
+             {isAdmin && (
+                <span className="bg-yellow-900/30 text-yellow-500 border border-yellow-900/50 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1">
+                    <Crown className="w-3 h-3" /> Admin
+                </span>
+             )}
+          </div>
+        ) : (
+          <button onClick={() => onJoin(group.id)} className="bg-orange-600 hover:bg-orange-500 text-white font-bold px-6 py-2 rounded-full shadow-lg transition-transform active:scale-95">
+            Entrar no Grupo
+          </button>
+        )}
+
+        {isAdmin && (
+            <button onClick={() => onDelete(group.id)} className="absolute top-4 right-4 text-slate-600 hover:text-red-500 p-2">
+                <Trash2 className="w-4 h-4" />
+            </button>
+        )}
+      </div>
+
+      {isMember && (
+        <>
+            <div className="flex gap-2 mb-4 border-b border-slate-800 pb-2">
+                <button onClick={() => setActiveTab('ranking')} className={`flex-1 pb-2 font-bold text-sm ${activeTab==='ranking' ? 'text-orange-500 border-b-2 border-orange-500' : 'text-slate-500'}`}>Ranking do Grupo</button>
+                <button onClick={() => setActiveTab('members')} className={`flex-1 pb-2 font-bold text-sm ${activeTab==='members' ? 'text-orange-500 border-b-2 border-orange-500' : 'text-slate-500'}`}>Membros ({members.length})</button>
+            </div>
+
+            {activeTab === 'ranking' ? (
+                <Ranking users={rankedMembers} title="" subtitle="Quem lidera este grupo?" currentUserUid={currentUserUid} />
+            ) : (
+                <div className="space-y-2">
+                    {members.map(member => (
+                        <div key={member.uid} className="flex items-center justify-between bg-slate-900 p-3 rounded-xl border border-slate-800">
+                            <div className="flex items-center gap-3">
+                                <img src={member.avatar} className="w-8 h-8 rounded-full" />
+                                <span className={member.uid === currentUserUid ? "text-orange-400 font-bold" : "text-slate-200"}>{member.name}</span>
+                                {group.adminUid === member.uid && <Crown className="w-3 h-3 text-yellow-500" />}
+                            </div>
+                            {isAdmin && member.uid !== currentUserUid && (
+                                <button onClick={() => onKick(group.id, member.uid)} className="text-xs text-red-500 hover:underline">Remover</button>
+                            )}
+                        </div>
+                    ))}
+                    <div className="pt-4 flex justify-center">
+                        <button onClick={() => onLeave(group.id)} className="flex items-center gap-2 text-red-500 text-sm font-bold hover:bg-red-950/30 px-4 py-2 rounded-lg transition-colors">
+                            <DoorOpen className="w-4 h-4" /> Sair do Grupo
+                        </button>
+                    </div>
+                </div>
+            )}
+        </>
+      )}
+    </div>
+  );
+}
 
 function SettingsScreen({ profile, onUpdate, onDeleteAccount }) {
   const [name, setName] = useState(profile.name);
@@ -456,15 +702,10 @@ function SettingsScreen({ profile, onUpdate, onDeleteAccount }) {
       </h2>
 
       <div className="bg-slate-900 rounded-2xl p-6 border border-slate-800 space-y-8">
-        
-        {/* Avatar Section */}
         <div className="flex flex-col items-center gap-4">
            <div className="relative group">
               <img src={avatar} className="w-24 h-24 rounded-full bg-slate-800 object-cover border-4 border-slate-700 group-hover:border-orange-500 transition-colors" />
-              <button 
-                onClick={() => fileInputRef.current?.click()}
-                className="absolute bottom-0 right-0 bg-orange-600 p-2 rounded-full text-white hover:bg-orange-500 transition-transform hover:scale-110 shadow-lg"
-              >
+              <button onClick={() => fileInputRef.current?.click()} className="absolute bottom-0 right-0 bg-orange-600 p-2 rounded-full text-white hover:bg-orange-500 transition-transform hover:scale-110 shadow-lg">
                 <Edit2 className="w-4 h-4" />
               </button>
            </div>
@@ -482,79 +723,71 @@ function SettingsScreen({ profile, onUpdate, onDeleteAccount }) {
            </div>
         </div>
 
-        {/* Name Section */}
         <div>
           <label className="text-xs text-slate-400 uppercase font-bold ml-1">Seu Vulgo</label>
-          <input 
-            type="text" 
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-white mt-1 focus:ring-2 focus:ring-orange-500 outline-none font-bold"
-            maxLength={20}
-          />
+          <input type="text" value={name} onChange={(e) => setName(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-white mt-1 focus:ring-2 focus:ring-orange-500 outline-none font-bold" maxLength={20} />
         </div>
 
-        <button 
-          onClick={() => onUpdate(name, avatar)}
-          className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-3 rounded-xl transition-all shadow-lg shadow-green-900/20 active:scale-95"
-        >
-          Salvar Alterações
-        </button>
+        <button onClick={() => onUpdate(name, avatar)} className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-3 rounded-xl transition-all shadow-lg shadow-green-900/20 active:scale-95">Salvar Alterações</button>
 
-        {/* DANGER ZONE */}
         <div className="pt-6 border-t border-slate-800">
             <h3 className="text-red-500 font-bold text-sm uppercase mb-3 flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4" /> Zona de Perigo
             </h3>
-            <button 
-                onClick={onDeleteAccount}
-                className="w-full bg-red-950/50 hover:bg-red-900/50 text-red-500 border border-red-900/50 font-bold py-3 rounded-xl transition-colors text-sm flex items-center justify-center gap-2"
-            >
-                <Trash2 className="w-4 h-4" />
-                Excluir Minha Conta
+            <button onClick={onDeleteAccount} className="w-full bg-red-950/50 hover:bg-red-900/50 text-red-500 border border-red-900/50 font-bold py-3 rounded-xl transition-colors text-sm flex items-center justify-center gap-2">
+                <Trash2 className="w-4 h-4" /> Excluir Minha Conta
             </button>
-            <p className="text-center text-xs text-slate-600 mt-2">
-                Essa ação é irreversível. Todos seus dados serão apagados.
-            </p>
         </div>
       </div>
     </div>
   );
 }
 
-function Feed({ posts, usersMap, currentUserUid, onLike, onComment, onDelete }) {
-  if (posts.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center h-64 text-slate-500">
-        <Wind className="w-12 h-12 mb-2 opacity-20" />
-        <p>Ninguém fumou ainda hoje...</p>
-      </div>
-    );
-  }
+function Feed({ posts, usersMap, userProfile, currentUserUid, onLike, onComment, onDelete }) {
+  const [feedMode, setFeedMode] = useState('global'); // global, friends
+
+  // Lógica de Filtro do Feed
+  const filteredPosts = feedMode === 'global' 
+    ? posts 
+    : posts.filter(post => {
+        const myFriends = userProfile?.friends || [];
+        return myFriends.includes(post.uid) || post.uid === currentUserUid;
+      });
 
   return (
-    <div className="flex flex-col gap-6 p-4">
-      {posts.map(post => {
-        // Puxa dados atualizados do mapa de usuários ou usa fallback do post
-        // ALTERADO: Fallback com nome "Parou de fumar" e avatar genérico
-        const author = usersMap[post.uid] || { 
-          name: post.authorName || 'Parou de fumar', 
-          avatar: post.authorAvatar || 'https://api.dicebear.com/7.x/initials/svg?seed=PF&backgroundColor=gray' 
-        };
-        
-        return (
-          <PostCard 
-            key={post.id} 
-            post={post} 
-            author={author}
-            usersMap={usersMap}
-            currentUserUid={currentUserUid} 
-            onLike={onLike}
-            onComment={onComment}
-            onDelete={onDelete}
-          />
-        );
-      })}
+    <div className="flex flex-col h-full">
+        {/* Toggle Feed */}
+        <div className="flex border-b border-slate-800 bg-slate-900/50 sticky top-0 z-10 backdrop-blur-sm">
+            <button 
+                onClick={() => setFeedMode('global')}
+                className={`flex-1 py-3 text-sm font-bold transition-colors relative ${feedMode==='global' ? 'text-white' : 'text-slate-500 hover:text-slate-300'}`}
+            >
+                Global
+                {feedMode==='global' && <div className="absolute bottom-0 left-0 w-full h-1 bg-orange-500 rounded-t-full"></div>}
+            </button>
+            <button 
+                onClick={() => setFeedMode('friends')}
+                className={`flex-1 py-3 text-sm font-bold transition-colors relative ${feedMode==='friends' ? 'text-white' : 'text-slate-500 hover:text-slate-300'}`}
+            >
+                Amigos
+                {feedMode==='friends' && <div className="absolute bottom-0 left-0 w-full h-1 bg-orange-500 rounded-t-full"></div>}
+            </button>
+        </div>
+
+        {filteredPosts.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-64 text-slate-500 mt-8">
+            <Wind className="w-12 h-12 mb-2 opacity-20" />
+            <p>{feedMode === 'friends' ? "Seus amigos não fumaram ainda..." : "Ninguém fumou ainda hoje..."}</p>
+            {feedMode === 'friends' && <p className="text-xs mt-2 text-slate-600">Adicione pessoas na aba Comunidade!</p>}
+            </div>
+        ) : (
+            <div className="flex flex-col gap-6 p-4">
+            {filteredPosts.map(post => {
+                const author = usersMap[post.uid] || { name: post.authorName || 'Parou de fumar', avatar: post.authorAvatar || 'https://api.dicebear.com/7.x/initials/svg?seed=PF&backgroundColor=gray' };
+                return <PostCard key={post.id} post={post} author={author} usersMap={usersMap} currentUserUid={currentUserUid} onLike={onLike} onComment={onComment} onDelete={onDelete} />;
+            })}
+            </div>
+        )}
     </div>
   );
 }
@@ -570,8 +803,6 @@ function PostCard({ post, author, usersMap, currentUserUid, onLike, onComment, o
 
   return (
     <div className="bg-slate-900 rounded-2xl overflow-hidden border border-slate-800 shadow-lg relative">
-      
-      {/* Modal de Curtidas */}
       {showLikesModal && (
         <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={() => setShowLikesModal(false)}>
             <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-sm overflow-hidden" onClick={e => e.stopPropagation()}>
@@ -582,7 +813,6 @@ function PostCard({ post, author, usersMap, currentUserUid, onLike, onComment, o
                 <div className="max-h-[60vh] overflow-y-auto p-2">
                     {post.likes && post.likes.length > 0 ? (
                         post.likes.map(uid => {
-                            // ALTERADO: Fallback para quem curtiu
                             const liker = usersMap[uid] || { name: 'Parou de fumar', avatar: 'https://api.dicebear.com/7.x/initials/svg?seed=PF&backgroundColor=gray' };
                             return (
                                 <div key={uid} className="flex items-center gap-3 p-3 hover:bg-slate-800 rounded-xl">
@@ -591,35 +821,21 @@ function PostCard({ post, author, usersMap, currentUserUid, onLike, onComment, o
                                 </div>
                             )
                         })
-                    ) : (
-                        <p className="p-4 text-center text-slate-500">Ninguém curtiu ainda.</p>
-                    )}
+                    ) : <p className="p-4 text-center text-slate-500">Ninguém curtiu ainda.</p>}
                 </div>
             </div>
         </div>
       )}
 
-      {/* Header do Post */}
       <div className="p-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
             <img src={author.avatar} className="w-10 h-10 rounded-full bg-slate-800 object-cover border border-slate-700" alt="avatar" />
             <div>
             <p className="font-bold text-sm text-slate-200">{author.name}</p>
-            <p className="text-xs text-slate-500 flex items-center gap-1">
-                {date} <span className="w-1 h-1 rounded-full bg-slate-600"></span> via {post.uid === currentUserUid ? 'Você' : 'cigaRats'}
-            </p>
+            <p className="text-xs text-slate-500 flex items-center gap-1">{date} <span className="w-1 h-1 rounded-full bg-slate-600"></span> via {post.uid === currentUserUid ? 'Você' : 'cigaRats'}</p>
             </div>
         </div>
-        
-        {isMyPost && (
-            <button 
-                onClick={() => onDelete(post.id)} 
-                className="text-slate-600 hover:text-red-500 p-2 transition-colors"
-                title="Apagar Post"
-            >
-                <Trash2 className="w-5 h-5" />
-            </button>
-        )}
+        {isMyPost && <button onClick={() => onDelete(post.id)} className="text-slate-600 hover:text-red-500 p-2 transition-colors"><Trash2 className="w-5 h-5" /></button>}
       </div>
 
       <div className="relative bg-black flex items-center justify-center overflow-hidden min-h-[300px]">
@@ -627,31 +843,19 @@ function PostCard({ post, author, usersMap, currentUserUid, onLike, onComment, o
       </div>
 
       <div className="p-3 pb-2">
-         {post.caption && (
-             <p className="text-slate-300 text-sm mb-3 leading-relaxed"><span className="font-bold text-slate-100">{author.name}</span> {post.caption}</p>
-         )}
+         {post.caption && <p className="text-slate-300 text-sm mb-3 leading-relaxed"><span className="font-bold text-slate-100">{author.name}</span> {post.caption}</p>}
       </div>
 
       <div className="px-3 pb-3 flex items-center justify-between border-b border-slate-800/50">
         <div className="flex gap-6">
           <div className="flex items-center gap-2">
-            <button 
-                onClick={() => onLike(post.id, post.likes || [])}
-                className={`transition-all active:scale-90 ${isLiked ? 'text-red-500' : 'text-slate-400 hover:text-white'}`}
-            >
+            <button onClick={() => onLike(post.id, post.likes || [])} className={`transition-all active:scale-90 ${isLiked ? 'text-red-500' : 'text-slate-400 hover:text-white'}`}>
                 <Wind className={`w-6 h-6 ${isLiked ? 'fill-current' : ''}`} strokeWidth={2} />
             </button>
-            <button onClick={() => setShowLikesModal(true)} className="text-sm font-bold text-slate-200 hover:underline cursor-pointer">
-                {post.likes?.length || 0}
-            </button>
+            <button onClick={() => setShowLikesModal(true)} className="text-sm font-bold text-slate-200 hover:underline cursor-pointer">{post.likes?.length || 0}</button>
           </div>
-          
-          <button 
-            onClick={() => setShowComments(!showComments)}
-            className="flex items-center gap-2 text-sm text-slate-400 hover:text-white transition-colors"
-          >
-            <MessageCircle className="w-6 h-6" />
-            <span className="font-bold">{post.comments?.length || 0}</span>
+          <button onClick={() => setShowComments(!showComments)} className="flex items-center gap-2 text-sm text-slate-400 hover:text-white transition-colors">
+            <MessageCircle className="w-6 h-6" /> <span className="font-bold">{post.comments?.length || 0}</span>
           </button>
         </div>
       </div>
@@ -660,8 +864,6 @@ function PostCard({ post, author, usersMap, currentUserUid, onLike, onComment, o
         <div className="bg-slate-950/50 p-3 animate-in slide-in-from-top-2">
           <div className="max-h-40 overflow-y-auto space-y-3 mb-3 scrollbar-thin scrollbar-thumb-slate-700 pr-2">
             {post.comments?.map((c, i) => {
-              // Resolver nome do comentarista
-              // ALTERADO: Fallback para comentários
               const commenter = usersMap[c.authorUid] || { name: c.author || 'Parou de fumar' };
               return (
                 <div key={i} className="text-sm flex gap-2">
@@ -670,33 +872,11 @@ function PostCard({ post, author, usersMap, currentUserUid, onLike, onComment, o
                 </div>
               );
             })}
-            {(!post.comments || post.comments.length === 0) && (
-              <p className="text-xs text-slate-600 italic text-center py-2">Sem comentários... Solte a fumaça nos comentários.</p>
-            )}
+            {(!post.comments || post.comments.length === 0) && <p className="text-xs text-slate-600 italic text-center py-2">Sem comentários... Solte a fumaça nos comentários.</p>}
           </div>
           <div className="flex gap-2 items-center">
-            <input 
-              type="text" 
-              placeholder="Comente algo..." 
-              className="flex-1 bg-slate-800 border-none rounded-full px-4 py-2 text-sm text-white focus:ring-1 focus:ring-orange-500 placeholder-slate-500"
-              value={commentText}
-              onChange={(e) => setCommentText(e.target.value)}
-              onKeyDown={(e) => {
-                if(e.key === 'Enter') {
-                    onComment(post.id, commentText);
-                    setCommentText('');
-                }
-              }}
-            />
-            <button 
-              onClick={() => {
-                onComment(post.id, commentText);
-                setCommentText('');
-              }}
-              className="text-orange-500 hover:text-orange-400 p-2 bg-slate-800 rounded-full"
-            >
-              <Send className="w-4 h-4" />
-            </button>
+            <input type="text" placeholder="Comente algo..." className="flex-1 bg-slate-800 border-none rounded-full px-4 py-2 text-sm text-white focus:ring-1 focus:ring-orange-500 placeholder-slate-500" value={commentText} onChange={(e) => setCommentText(e.target.value)} onKeyDown={(e) => { if(e.key === 'Enter') { onComment(post.id, commentText); setCommentText(''); }}} />
+            <button onClick={() => { onComment(post.id, commentText); setCommentText(''); }} className="text-orange-500 hover:text-orange-400 p-2 bg-slate-800 rounded-full"><Send className="w-4 h-4" /></button>
           </div>
         </div>
       )}
@@ -704,17 +884,19 @@ function PostCard({ post, author, usersMap, currentUserUid, onLike, onComment, o
   );
 }
 
-function Ranking({ leaderboard, currentUserUid }) {
+function Ranking({ users, title, subtitle, currentUserUid }) {
   return (
     <div className="p-4">
-      <div className="bg-gradient-to-br from-orange-600 to-red-600 rounded-2xl p-6 mb-6 text-white shadow-lg relative overflow-hidden">
-        <Wind className="absolute -right-4 -bottom-4 w-32 h-32 opacity-20 rotate-12" />
-        <h2 className="text-3xl font-black italic mb-1 tracking-tighter">RANKING</h2>
-        <p className="text-orange-100 text-sm font-medium opacity-90">Quem vai precisar de um pulmão novo primeiro?</p>
-      </div>
+      {title && (
+        <div className="bg-gradient-to-br from-orange-600 to-red-600 rounded-2xl p-6 mb-6 text-white shadow-lg relative overflow-hidden">
+            <Wind className="absolute -right-4 -bottom-4 w-32 h-32 opacity-20 rotate-12" />
+            <h2 className="text-3xl font-black italic mb-1 tracking-tighter">{title}</h2>
+            <p className="text-orange-100 text-sm font-medium opacity-90">{subtitle}</p>
+        </div>
+      )}
 
       <div className="space-y-3">
-        {leaderboard.map((user, index) => {
+        {users.map((user, index) => {
           const level = getLevel(user.xp || 0);
           const isMe = user.uid === currentUserUid;
           return (
@@ -722,16 +904,11 @@ function Ranking({ leaderboard, currentUserUid }) {
               <div className={`w-8 h-8 flex items-center justify-center font-black text-lg ${index === 0 ? 'text-yellow-400 text-2xl drop-shadow-sm' : index === 1 ? 'text-slate-300 text-xl' : index === 2 ? 'text-amber-700 text-xl' : 'text-slate-600'}`}>
                 {index <= 2 ? <Trophy className="w-5 h-5" /> : `#${index + 1}`}
               </div>
-              
               <img src={user.avatar} className="w-10 h-10 rounded-full bg-slate-800 object-cover" alt="avatar" />
-              
               <div className="flex-1">
-                <p className={`font-bold ${isMe ? 'text-orange-400' : 'text-slate-200'}`}>
-                  {user.name} {isMe && <span className="text-[10px] ml-1 bg-slate-700 px-1.5 py-0.5 rounded text-white">Você</span>}
-                </p>
+                <p className={`font-bold ${isMe ? 'text-orange-400' : 'text-slate-200'}`}>{user.name} {isMe && <span className="text-[10px] ml-1 bg-slate-700 px-1.5 py-0.5 rounded text-white">Você</span>}</p>
                 <p className={`text-xs ${level.color}`}>{level.title}</p>
               </div>
-
               <div className="text-right">
                 <p className="font-black text-white text-lg">{user.cigarettes || 0} <span className="text-xs font-normal text-slate-500">cigs</span></p>
                 <p className="text-xs text-slate-500 font-mono">{user.xp || 0} XP</p>
@@ -761,21 +938,11 @@ function UploadScreen({ onPost, onCancel }) {
       <div className="p-4 flex items-center justify-between bg-slate-900 border-b border-slate-800">
         <button onClick={onCancel} className="text-slate-400 p-2 hover:bg-slate-800 rounded-full"><X /></button>
         <span className="font-bold text-white">Registrar Fumaça</span>
-        <button 
-          onClick={() => onPost(image, caption)} 
-          disabled={!image}
-          className={`font-bold px-4 py-1.5 rounded-full transition-colors ${image ? 'bg-orange-600 text-white' : 'bg-slate-800 text-slate-500'}`}
-        >
-          Postar
-        </button>
+        <button onClick={() => onPost(image, caption)} disabled={!image} className={`font-bold px-4 py-1.5 rounded-full transition-colors ${image ? 'bg-orange-600 text-white' : 'bg-slate-800 text-slate-500'}`}>Postar</button>
       </div>
-
       <div className="flex-1 flex flex-col p-4 gap-4">
         {!image ? (
-          <div 
-            onClick={() => fileInputRef.current?.click()}
-            className="flex-1 bg-slate-900/50 border-2 border-dashed border-slate-800 rounded-2xl flex flex-col items-center justify-center cursor-pointer hover:border-orange-500 hover:bg-slate-900 transition-all group"
-          >
+          <div onClick={() => fileInputRef.current?.click()} className="flex-1 bg-slate-900/50 border-2 border-dashed border-slate-800 rounded-2xl flex flex-col items-center justify-center cursor-pointer hover:border-orange-500 hover:bg-slate-900 transition-all group">
             <div className="bg-slate-800 p-6 rounded-full mb-4 group-hover:scale-110 transition-transform group-hover:bg-slate-700">
               <Camera className="w-10 h-10 text-orange-500" />
             </div>
@@ -785,31 +952,12 @@ function UploadScreen({ onPost, onCancel }) {
         ) : (
           <div className="flex-1 relative rounded-2xl overflow-hidden bg-black flex items-center justify-center border border-slate-800">
             <img src={image} className="max-w-full max-h-full object-contain" />
-            <button 
-              onClick={() => setImage(null)}
-              className="absolute top-4 right-4 bg-black/60 backdrop-blur-sm p-2 rounded-full text-white hover:bg-red-600/80 transition-colors"
-            >
-              <X className="w-5 h-5" />
-            </button>
+            <button onClick={() => setImage(null)} className="absolute top-4 right-4 bg-black/60 backdrop-blur-sm p-2 rounded-full text-white hover:bg-red-600/80 transition-colors"><X className="w-5 h-5" /></button>
           </div>
         )}
-
-        <input 
-          type="file" 
-          ref={fileInputRef} 
-          accept="image/*" 
-          className="hidden" 
-          onChange={handleFileChange}
-        />
-
+        <input type="file" ref={fileInputRef} accept="image/*" className="hidden" onChange={handleFileChange} />
         <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 focus-within:border-orange-500 transition-colors">
-          <input 
-            type="text" 
-            placeholder="Escreva uma legenda..." 
-            className="w-full bg-transparent text-white placeholder-slate-500 outline-none text-lg"
-            value={caption}
-            onChange={e => setCaption(e.target.value)}
-          />
+          <input type="text" placeholder="Escreva uma legenda..." className="w-full bg-transparent text-white placeholder-slate-500 outline-none text-lg" value={caption} onChange={e => setCaption(e.target.value)} />
         </div>
       </div>
     </div>
@@ -818,10 +966,7 @@ function UploadScreen({ onPost, onCancel }) {
 
 function NavButton({ icon: Icon, label, active, onClick }) {
   return (
-    <button 
-      onClick={onClick}
-      className={`flex md:flex-row flex-col items-center md:gap-3 gap-1 p-2 md:px-4 md:py-3 w-16 md:w-full transition-all duration-300 rounded-xl md:hover:bg-slate-800 ${active ? 'text-orange-500 md:bg-slate-800' : 'text-slate-500 hover:text-slate-300'}`}
-    >
+    <button onClick={onClick} className={`flex md:flex-row flex-col items-center md:gap-3 gap-1 p-2 md:px-4 md:py-3 w-16 md:w-full transition-all duration-300 rounded-xl md:hover:bg-slate-800 ${active ? 'text-orange-500 md:bg-slate-800' : 'text-slate-500 hover:text-slate-300'}`}>
       <Icon className={`w-6 h-6 md:w-5 md:h-5 ${active ? 'fill-current md:fill-none drop-shadow-[0_0_8px_rgba(249,115,22,0.5)] md:drop-shadow-none' : ''}`} strokeWidth={active ? 2.5 : 2} />
       <span className={`text-[10px] md:text-sm font-bold transition-opacity ${active ? 'opacity-100' : 'opacity-0 md:opacity-100'} md:opacity-100`}>{label}</span>
     </button>
@@ -831,59 +976,25 @@ function NavButton({ icon: Icon, label, active, onClick }) {
 function LoginScreen({ onGoogle, onGuest }) {
     const [mode, setMode] = useState('main'); 
     const [name, setName] = useState('');
-  
     return (
       <div className="h-screen flex flex-col items-center justify-center p-6 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-800 via-slate-950 to-black">
         <div className="bg-slate-900 p-8 rounded-2xl border border-slate-800 w-full shadow-2xl text-center">
           <Flame className="w-16 h-16 text-orange-500 mx-auto mb-4" />
           <h1 className="text-4xl font-black italic mb-2 bg-gradient-to-r from-orange-500 to-red-600 bg-clip-text text-transparent">cigaRats</h1>
           <p className="text-slate-400 mb-8 text-sm">A rede social para quem queima um.</p>
-          
           {mode === 'main' ? (
             <div className="space-y-3 w-full">
-              <button 
-                onClick={onGoogle}
-                className="w-full bg-white hover:bg-gray-100 text-slate-900 font-bold py-3 rounded-xl transition-all flex items-center justify-center gap-3 shadow-lg group"
-              >
-                <Globe className="w-5 h-5 text-blue-600 group-hover:scale-110 transition-transform" />
-                Entrar com Google
+              <button onClick={onGoogle} className="w-full bg-white hover:bg-gray-100 text-slate-900 font-bold py-3 rounded-xl transition-all flex items-center justify-center gap-3 shadow-lg group">
+                <Globe className="w-5 h-5 text-blue-600 group-hover:scale-110 transition-transform" /> Entrar com Google
               </button>
-              
-              <div className="relative py-2">
-                <div className="absolute inset-0 flex items-center"><span className="w-full border-t border-slate-800"></span></div>
-                <div className="relative flex justify-center text-xs uppercase"><span className="bg-slate-900 px-2 text-slate-500">ou</span></div>
-              </div>
-  
-              <button 
-                onClick={() => setMode('guest_form')}
-                className="w-full bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold py-3 rounded-xl transition-colors text-sm"
-              >
-                Entrar como Convidado
-              </button>
+              <div className="relative py-2"><div className="absolute inset-0 flex items-center"><span className="w-full border-t border-slate-800"></span></div><div className="relative flex justify-center text-xs uppercase"><span className="bg-slate-900 px-2 text-slate-500">ou</span></div></div>
+              <button onClick={() => setMode('guest_form')} className="w-full bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold py-3 rounded-xl transition-colors text-sm">Entrar como Convidado</button>
             </div>
           ) : (
             <div className="w-full animate-in fade-in slide-in-from-bottom-4">
-               <input 
-                type="text" 
-                placeholder="Escolha seu vulgo..." 
-                className="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-white mb-4 focus:ring-2 focus:ring-orange-500 outline-none placeholder-slate-600 text-center font-bold"
-                value={name}
-                onChange={e => setName(e.target.value)}
-                maxLength={15}
-                autoFocus
-              />
-              <button 
-                onClick={() => onGuest(name)}
-                className="w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-3 rounded-xl transition-colors mb-3"
-              >
-                Começar
-              </button>
-              <button 
-                onClick={() => setMode('main')}
-                className="text-slate-500 text-xs hover:text-white"
-              >
-                Voltar
-              </button>
+               <input type="text" placeholder="Escolha seu vulgo..." className="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-white mb-4 focus:ring-2 focus:ring-orange-500 outline-none placeholder-slate-600 text-center font-bold" value={name} onChange={e => setName(e.target.value)} maxLength={15} autoFocus />
+              <button onClick={() => onGuest(name)} className="w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-3 rounded-xl transition-colors mb-3">Começar</button>
+              <button onClick={() => setMode('main')} className="text-slate-500 text-xs hover:text-white">Voltar</button>
             </div>
           )}
         </div>
