@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Camera, MessageCircle, Trophy, Flame, Wind, User, Send, X, PlusCircle, LogOut, Globe, AlertCircle, Settings, Edit2, Image as ImageIcon } from 'lucide-react';
+import { Camera, MessageCircle, Trophy, Flame, Wind, User, Send, X, PlusCircle, LogOut, Globe, AlertCircle, Settings, Edit2, Image as ImageIcon, Trash2 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
   getAuth, 
@@ -22,6 +22,7 @@ import {
   arrayUnion,
   setDoc,
   getDoc,
+  deleteDoc,
   serverTimestamp 
 } from 'firebase/firestore';
 
@@ -240,6 +241,24 @@ export default function App() {
     } catch (e) { console.error(e); }
   };
 
+  const handleDeletePost = async (postId) => {
+    if (!window.confirm("Apagar postagem? Você perderá 10XP e 1 cigarro do ranking.")) return;
+    try {
+        // Excluir post
+        await deleteDoc(doc(db, POSTS_COLLECTION, postId));
+        
+        // Penalizar usuário
+        const userRef = doc(db, USERS_COLLECTION, user.uid);
+        await updateDoc(userRef, { 
+            cigarettes: increment(-1), 
+            xp: increment(-10) 
+        });
+    } catch (e) {
+        console.error("Erro ao excluir:", e);
+        alert("Erro ao excluir post.");
+    }
+  };
+
   const handleUpdateProfile = async (newName, newAvatar) => {
     try {
       const userRef = doc(db, USERS_COLLECTION, user.uid);
@@ -362,7 +381,7 @@ export default function App() {
               )}
             </header>
 
-            {view === 'feed' && <Feed posts={posts} usersMap={usersMap} currentUserUid={user?.uid} onLike={handleLike} onComment={handleComment} />}
+            {view === 'feed' && <Feed posts={posts} usersMap={usersMap} currentUserUid={user?.uid} onLike={handleLike} onComment={handleComment} onDelete={handleDeletePost} />}
             {view === 'ranking' && <Ranking leaderboard={leaderboard} currentUserUid={user?.uid} />}
             {view === 'settings' && <SettingsScreen profile={userProfile} onUpdate={handleUpdateProfile} />}
             {view === 'upload' && <UploadScreen onPost={handlePost} onCancel={() => setView('feed')} />}
@@ -461,7 +480,7 @@ function SettingsScreen({ profile, onUpdate }) {
   );
 }
 
-function Feed({ posts, usersMap, currentUserUid, onLike, onComment }) {
+function Feed({ posts, usersMap, currentUserUid, onLike, onComment, onDelete }) {
   if (posts.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-64 text-slate-500">
@@ -474,8 +493,7 @@ function Feed({ posts, usersMap, currentUserUid, onLike, onComment }) {
   return (
     <div className="flex flex-col gap-6 p-4">
       {posts.map(post => {
-        // Puxa dados atualizados do mapa de usuários ou usa fallback do post (se tiver)
-        // Se for post antigo sem uid, tenta manter compatibilidade
+        // Puxa dados atualizados do mapa de usuários ou usa fallback do post
         const author = usersMap[post.uid] || { name: post.authorName || 'Desconhecido', avatar: post.authorAvatar };
         
         return (
@@ -487,6 +505,7 @@ function Feed({ posts, usersMap, currentUserUid, onLike, onComment }) {
             currentUserUid={currentUserUid} 
             onLike={onLike}
             onComment={onComment}
+            onDelete={onDelete}
           />
         );
       })}
@@ -494,23 +513,66 @@ function Feed({ posts, usersMap, currentUserUid, onLike, onComment }) {
   );
 }
 
-function PostCard({ post, author, usersMap, currentUserUid, onLike, onComment }) {
+function PostCard({ post, author, usersMap, currentUserUid, onLike, onComment, onDelete }) {
   const [commentText, setCommentText] = useState('');
   const [showComments, setShowComments] = useState(false);
+  const [showLikesModal, setShowLikesModal] = useState(false);
   
   const isLiked = post.likes?.includes(currentUserUid);
   const date = post.timestamp ? new Date(post.timestamp.seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute:'2-digit' }) : '...';
+  const isMyPost = post.uid === currentUserUid;
 
   return (
-    <div className="bg-slate-900 rounded-2xl overflow-hidden border border-slate-800 shadow-lg">
-      <div className="p-3 flex items-center gap-3">
-        <img src={author.avatar} className="w-10 h-10 rounded-full bg-slate-800 object-cover border border-slate-700" alt="avatar" />
-        <div>
-          <p className="font-bold text-sm text-slate-200">{author.name}</p>
-          <p className="text-xs text-slate-500 flex items-center gap-1">
-            {date} <span className="w-1 h-1 rounded-full bg-slate-600"></span> via {post.uid === currentUserUid ? 'Você' : 'cigaRats'}
-          </p>
+    <div className="bg-slate-900 rounded-2xl overflow-hidden border border-slate-800 shadow-lg relative">
+      
+      {/* Modal de Curtidas */}
+      {showLikesModal && (
+        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={() => setShowLikesModal(false)}>
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-sm overflow-hidden" onClick={e => e.stopPropagation()}>
+                <div className="p-4 border-b border-slate-800 flex justify-between items-center">
+                    <h3 className="font-bold text-white">Quem Tossiu</h3>
+                    <button onClick={() => setShowLikesModal(false)}><X className="w-5 h-5 text-slate-400" /></button>
+                </div>
+                <div className="max-h-[60vh] overflow-y-auto p-2">
+                    {post.likes && post.likes.length > 0 ? (
+                        post.likes.map(uid => {
+                            const liker = usersMap[uid] || { name: 'Desconhecido', avatar: '' };
+                            return (
+                                <div key={uid} className="flex items-center gap-3 p-3 hover:bg-slate-800 rounded-xl">
+                                    <img src={liker.avatar} className="w-8 h-8 rounded-full bg-slate-700" />
+                                    <span className="font-medium text-slate-200">{liker.name}</span>
+                                </div>
+                            )
+                        })
+                    ) : (
+                        <p className="p-4 text-center text-slate-500">Ninguém curtiu ainda.</p>
+                    )}
+                </div>
+            </div>
         </div>
+      )}
+
+      {/* Header do Post */}
+      <div className="p-3 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+            <img src={author.avatar} className="w-10 h-10 rounded-full bg-slate-800 object-cover border border-slate-700" alt="avatar" />
+            <div>
+            <p className="font-bold text-sm text-slate-200">{author.name}</p>
+            <p className="text-xs text-slate-500 flex items-center gap-1">
+                {date} <span className="w-1 h-1 rounded-full bg-slate-600"></span> via {post.uid === currentUserUid ? 'Você' : 'cigaRats'}
+            </p>
+            </div>
+        </div>
+        
+        {isMyPost && (
+            <button 
+                onClick={() => onDelete(post.id)} 
+                className="text-slate-600 hover:text-red-500 p-2 transition-colors"
+                title="Apagar Post"
+            >
+                <Trash2 className="w-5 h-5" />
+            </button>
+        )}
       </div>
 
       <div className="relative bg-black flex items-center justify-center overflow-hidden min-h-[300px]">
@@ -525,13 +587,17 @@ function PostCard({ post, author, usersMap, currentUserUid, onLike, onComment })
 
       <div className="px-3 pb-3 flex items-center justify-between border-b border-slate-800/50">
         <div className="flex gap-6">
-          <button 
-            onClick={() => onLike(post.id, post.likes || [])}
-            className={`flex items-center gap-2 text-sm transition-all active:scale-90 ${isLiked ? 'text-red-500' : 'text-slate-400 hover:text-white'}`}
-          >
-            <Wind className={`w-6 h-6 ${isLiked ? 'fill-current' : ''}`} strokeWidth={2} />
-            <span className="font-bold">{post.likes?.length || 0}</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button 
+                onClick={() => onLike(post.id, post.likes || [])}
+                className={`transition-all active:scale-90 ${isLiked ? 'text-red-500' : 'text-slate-400 hover:text-white'}`}
+            >
+                <Wind className={`w-6 h-6 ${isLiked ? 'fill-current' : ''}`} strokeWidth={2} />
+            </button>
+            <button onClick={() => setShowLikesModal(true)} className="text-sm font-bold text-slate-200 hover:underline cursor-pointer">
+                {post.likes?.length || 0}
+            </button>
+          </div>
           
           <button 
             onClick={() => setShowComments(!showComments)}
