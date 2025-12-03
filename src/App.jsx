@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Camera, MessageCircle, Trophy, Flame, Wind, User, Send, X, PlusCircle, LogOut, Globe, AlertCircle, Settings, Edit2, Image as ImageIcon, Trash2 } from 'lucide-react';
+import { Camera, MessageCircle, Trophy, Flame, Wind, User, Send, X, PlusCircle, LogOut, Globe, AlertCircle, Settings, Edit2, Image as ImageIcon, Trash2, AlertTriangle } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
   getAuth, 
@@ -7,6 +7,7 @@ import {
   signInWithPopup,
   GoogleAuthProvider,
   signOut,
+  deleteUser,
   onAuthStateChanged
 } from 'firebase/auth';
 import { 
@@ -26,8 +27,8 @@ import {
   serverTimestamp 
 } from 'firebase/firestore';
 
-// --- CONFIGURAÇÃO DO FIREBASE (COLE SUAS CHAVES AQUI) ---
-// Substitua tudo dentro deste objeto pelo que você copiou no console do Firebase
+// --- CONFIGURAÇÃO DO FIREBASE ---
+// Chaves configuradas para o projeto "cigarats"
 const firebaseConfig = {
   apiKey: "AIzaSyAu4CdKcPyB3Cp-EOgH_IXC_Iunip9L3wo",
   authDomain: "cigarats.firebaseapp.com",
@@ -224,6 +225,30 @@ export default function App() {
     setView('login');
   };
 
+  const handleDeleteAccount = async () => {
+    const confirmed = window.confirm("TEM CERTEZA? \n\nIsso apagará seu perfil, seu ranking e seus cigarros para sempre. Essa ação não pode ser desfeita.");
+    if (!confirmed) return;
+
+    try {
+        setLoading(true);
+        // 1. Apagar documento do Firestore
+        await deleteDoc(doc(db, USERS_COLLECTION, user.uid));
+        
+        // 2. Apagar usuário da Autenticação
+        await deleteUser(auth.currentUser);
+        
+        // O onAuthStateChanged vai lidar com o redirecionamento para login
+    } catch (error) {
+        console.error("Erro ao excluir conta:", error);
+        if (error.code === 'auth/requires-recent-login') {
+            alert("Por segurança, você precisa ter feito login recentemente para excluir a conta. \n\nPor favor, saia, entre novamente e tente excluir.");
+        } else {
+            alert("Erro ao excluir conta. Tente novamente.");
+        }
+        setLoading(false);
+    }
+  };
+
   const handlePost = async (imageData, caption) => {
     if (!imageData) return;
     try {
@@ -383,7 +408,7 @@ export default function App() {
 
             {view === 'feed' && <Feed posts={posts} usersMap={usersMap} currentUserUid={user?.uid} onLike={handleLike} onComment={handleComment} onDelete={handleDeletePost} />}
             {view === 'ranking' && <Ranking leaderboard={leaderboard} currentUserUid={user?.uid} />}
-            {view === 'settings' && <SettingsScreen profile={userProfile} onUpdate={handleUpdateProfile} />}
+            {view === 'settings' && <SettingsScreen profile={userProfile} onUpdate={handleUpdateProfile} onDeleteAccount={handleDeleteAccount} />}
             {view === 'upload' && <UploadScreen onPost={handlePost} onCancel={() => setView('feed')} />}
           </main>
 
@@ -412,7 +437,7 @@ export default function App() {
 
 // --- TELAS ---
 
-function SettingsScreen({ profile, onUpdate }) {
+function SettingsScreen({ profile, onUpdate, onDeleteAccount }) {
   const [name, setName] = useState(profile.name);
   const [avatar, setAvatar] = useState(profile.avatar);
   const fileInputRef = useRef(null);
@@ -430,7 +455,7 @@ function SettingsScreen({ profile, onUpdate }) {
         <Settings className="w-6 h-6" /> CONFIGURAÇÕES
       </h2>
 
-      <div className="bg-slate-900 rounded-2xl p-6 border border-slate-800 space-y-6">
+      <div className="bg-slate-900 rounded-2xl p-6 border border-slate-800 space-y-8">
         
         {/* Avatar Section */}
         <div className="flex flex-col items-center gap-4">
@@ -475,6 +500,23 @@ function SettingsScreen({ profile, onUpdate }) {
         >
           Salvar Alterações
         </button>
+
+        {/* DANGER ZONE */}
+        <div className="pt-6 border-t border-slate-800">
+            <h3 className="text-red-500 font-bold text-sm uppercase mb-3 flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4" /> Zona de Perigo
+            </h3>
+            <button 
+                onClick={onDeleteAccount}
+                className="w-full bg-red-950/50 hover:bg-red-900/50 text-red-500 border border-red-900/50 font-bold py-3 rounded-xl transition-colors text-sm flex items-center justify-center gap-2"
+            >
+                <Trash2 className="w-4 h-4" />
+                Excluir Minha Conta
+            </button>
+            <p className="text-center text-xs text-slate-600 mt-2">
+                Essa ação é irreversível. Todos seus dados serão apagados.
+            </p>
+        </div>
       </div>
     </div>
   );
