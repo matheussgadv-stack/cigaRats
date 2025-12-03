@@ -536,7 +536,11 @@ function Feed({ posts, usersMap, currentUserUid, onLike, onComment, onDelete }) 
     <div className="flex flex-col gap-6 p-4">
       {posts.map(post => {
         // Puxa dados atualizados do mapa de usuários ou usa fallback do post
-        const author = usersMap[post.uid] || { name: post.authorName || 'Desconhecido', avatar: post.authorAvatar };
+        // ALTERADO: Fallback com nome "Parou de fumar" e avatar genérico
+        const author = usersMap[post.uid] || { 
+          name: post.authorName || 'Parou de fumar', 
+          avatar: post.authorAvatar || 'https://api.dicebear.com/7.x/initials/svg?seed=PF&backgroundColor=gray' 
+        };
         
         return (
           <PostCard 
@@ -578,7 +582,8 @@ function PostCard({ post, author, usersMap, currentUserUid, onLike, onComment, o
                 <div className="max-h-[60vh] overflow-y-auto p-2">
                     {post.likes && post.likes.length > 0 ? (
                         post.likes.map(uid => {
-                            const liker = usersMap[uid] || { name: 'Desconhecido', avatar: '' };
+                            // ALTERADO: Fallback para quem curtiu
+                            const liker = usersMap[uid] || { name: 'Parou de fumar', avatar: 'https://api.dicebear.com/7.x/initials/svg?seed=PF&backgroundColor=gray' };
                             return (
                                 <div key={uid} className="flex items-center gap-3 p-3 hover:bg-slate-800 rounded-xl">
                                     <img src={liker.avatar} className="w-8 h-8 rounded-full bg-slate-700" />
@@ -656,7 +661,8 @@ function PostCard({ post, author, usersMap, currentUserUid, onLike, onComment, o
           <div className="max-h-40 overflow-y-auto space-y-3 mb-3 scrollbar-thin scrollbar-thumb-slate-700 pr-2">
             {post.comments?.map((c, i) => {
               // Resolver nome do comentarista
-              const commenter = usersMap[c.authorUid] || { name: c.author || 'Alguém' };
+              // ALTERADO: Fallback para comentários
+              const commenter = usersMap[c.authorUid] || { name: c.author || 'Parou de fumar' };
               return (
                 <div key={i} className="text-sm flex gap-2">
                   <span className="font-bold text-slate-300 shrink-0">{commenter.name}</span>
