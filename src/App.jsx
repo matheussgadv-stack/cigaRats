@@ -4,7 +4,7 @@ import {
   ShoppingBag, Trophy, Camera, X, Send, PlusCircle, 
   Users, Crown, DoorOpen, Trash2, ArrowRight, Settings,
   MapPin, Clock, Banknote, Skull, Medal, Lock, Search,
-  UserPlus, UserMinus, Bell, BellOff, Zap, Coffee
+  UserPlus, UserMinus, Bell, BellOff, Zap, Coffee, Globe
 } from 'lucide-react';
 
 // --- CONSTANTES E DADOS DO JOGO ---
@@ -116,9 +116,25 @@ export default function App() {
 
   // --- ACTIONS ---
 
-  const handleLogin = (name) => {
+  const handleGoogleLogin = () => {
+    // Simulação do login com Google (já que é um protótipo sem backend real configurado aqui)
     const newUser = { 
-      uid: 'me', 
+      uid: 'google_user_' + Date.now(), 
+      name: 'Google User', 
+      avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${Date.now()}`, 
+      xp: 100, cigarettes: 0, balance: 100, 
+      inventory: [], equipped: {}, friends: [],
+      streak: 1, activeBoost: null,
+      joinedAt: { seconds: Date.now() / 1000 }
+    };
+    setUser(newUser);
+    setUsersMap(prev => ({ ...prev, [newUser.uid]: newUser }));
+    setView('feed');
+  };
+
+  const handleGuestLogin = (name) => {
+    const newUser = { 
+      uid: 'guest_' + Date.now(), 
       name: name || 'Convidado', 
       avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${Date.now()}`, 
       xp: 0, cigarettes: 0, balance: 50, 
@@ -127,9 +143,9 @@ export default function App() {
       joinedAt: { seconds: Date.now() / 1000 }
     };
     setUser(newUser);
-    setUsersMap(prev => ({ ...prev, 'me': newUser }));
+    setUsersMap(prev => ({ ...prev, [newUser.uid]: newUser }));
     setView('feed');
-    // Verifica se precisa mostrar o modal de notificações
+    
     if ("Notification" in window && Notification.permission === "default") {
         setTimeout(() => setShowNotifModal(true), 2000);
     }
@@ -246,7 +262,7 @@ export default function App() {
 
   // --- RENDERIZADORES ---
 
-  if (!user) return <LoginScreen onGuest={handleLogin} />;
+  if (!user) return <LoginScreen onGoogle={handleGoogleLogin} onGuest={handleGuestLogin} />;
 
   return (
     <div className="bg-slate-950 min-h-screen text-slate-100 font-sans pb-20 max-w-md mx-auto shadow-2xl overflow-hidden relative">
@@ -726,6 +742,57 @@ function NavButton({ icon: Icon, label, active, onClick, badge }) {
     ); 
 }
 
-function LoginScreen({ onGuest }) { const [name, setName] = useState(''); return (<div className="h-screen flex flex-col items-center justify-center p-6 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-800 via-slate-950 to-black"><div className="bg-slate-900 p-8 rounded-2xl border border-slate-800 w-full shadow-2xl text-center"><Flame className="w-16 h-16 text-orange-500 mx-auto mb-4" /><h1 className="text-4xl font-black italic mb-2 bg-gradient-to-r from-orange-500 to-red-600 bg-clip-text text-transparent">cigaRats</h1><p className="text-slate-400 mb-8 text-sm">A rede social para quem queima um.</p><input type="text" placeholder="Seu vulgo..." className="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-white mb-4 text-center font-bold" value={name} onChange={e => setName(e.target.value)} /><button onClick={() => onGuest(name)} className="w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-3 rounded-xl transition-colors mb-3">Entrar</button></div></div>); }
+function LoginScreen({ onGoogle, onGuest }) {
+  const [mode, setMode] = useState('main');
+  const [name, setName] = useState('');
+
+  return (
+    <div className="h-screen flex flex-col items-center justify-center p-6 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-800 via-slate-950 to-black">
+      <div className="bg-slate-900 p-8 rounded-2xl border border-slate-800 w-full shadow-2xl text-center">
+        <Flame className="w-16 h-16 text-orange-500 mx-auto mb-4" />
+        <h1 className="text-4xl font-black italic mb-2 bg-gradient-to-r from-orange-500 to-red-600 bg-clip-text text-transparent">cigaRats</h1>
+        <p className="text-slate-400 mb-8 text-sm">A rede social para quem queima um.</p>
+
+        {mode === 'main' ? (
+          <div className="space-y-3 w-full animate-in fade-in">
+            <button onClick={onGoogle} className="w-full bg-white hover:bg-gray-100 text-slate-900 font-bold py-3 rounded-xl transition-all flex items-center justify-center gap-3 shadow-lg group">
+              <Globe className="w-5 h-5 text-blue-600 group-hover:scale-110 transition-transform" />
+              Entrar com Google
+            </button>
+            <div className="relative py-2">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t border-slate-800"></span>
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-slate-900 px-2 text-slate-500">ou</span>
+              </div>
+            </div>
+            <button onClick={() => setMode('guest')} className="w-full bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold py-3 rounded-xl transition-colors text-sm">
+              Entrar como Convidado
+            </button>
+          </div>
+        ) : (
+          <div className="w-full animate-in fade-in slide-in-from-bottom-4">
+            <input
+              type="text"
+              placeholder="Escolha seu vulgo..."
+              className="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-white mb-4 focus:ring-2 focus:ring-orange-500 outline-none placeholder-slate-600 text-center font-bold"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              maxLength={15}
+              autoFocus
+            />
+            <button onClick={() => onGuest(name)} className="w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-3 rounded-xl transition-colors mb-3">
+              Começar
+            </button>
+            <button onClick={() => setMode('main')} className="text-slate-500 text-xs hover:text-white">
+              Voltar
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function SettingsScreen({ profile, onUpdate, onDeleteAccount }) { const [name, setName] = useState(profile.name); const [avatar, setAvatar] = useState(profile.avatar); const fileInputRef = useRef(null); const handleFileChange = async (e) => { if (e.target.files[0]) setAvatar(await compressImage(e.target.files[0])); }; return (<div className="p-4 space-y-6"><h2 className="text-2xl font-black italic text-white flex gap-2"><Settings /> CONFIGURAÇÕES</h2><div className="bg-slate-900 p-6 rounded-2xl border border-slate-800 space-y-6"><div className="flex justify-center"><img src={avatar} onClick={() => fileInputRef.current?.click()} className="w-24 h-24 rounded-full border-4 border-slate-700" /><input type="file" ref={fileInputRef} className="hidden" onChange={handleFileChange} /></div><input type="text" value={name} onChange={e => setName(e.target.value)} className="w-full bg-slate-950 p-3 rounded text-white font-bold" /><button onClick={() => onUpdate(name, avatar)} className="w-full bg-green-600 text-white font-bold py-3 rounded">Salvar</button><button onClick={onDeleteAccount} className="w-full bg-red-950/50 text-red-500 border border-red-900/50 font-bold py-3 rounded flex justify-center gap-2"><Trash2 className="w-4 h-4" /> Excluir Conta</button></div></div>); }
