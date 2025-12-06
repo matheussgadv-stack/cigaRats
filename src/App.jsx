@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Camera, MessageCircle, Trophy, Flame, Wind, User, Send, X, PlusCircle, LogOut, Globe, AlertCircle, Settings, Edit2, Image as ImageIcon, Trash2, AlertTriangle, Users, Search, Crown, ArrowRight, DoorOpen, UserPlus, UserMinus, ShoppingBag, Check, Lock, Skull, Clock, Banknote, MapPin, Medal } from 'lucide-react';
-import { initializeApp } from 'firebase/app';
-import { 
-  getAuth, 
+import {  
   signInAnonymously, 
   signInWithPopup,
   GoogleAuthProvider,
@@ -11,7 +9,6 @@ import {
   onAuthStateChanged
 } from 'firebase/auth';
 import { 
-  getFirestore, 
   collection, 
   addDoc, 
   query, 
@@ -27,97 +24,13 @@ import {
   deleteDoc,
   serverTimestamp 
 } from 'firebase/firestore';
-
-// --- CONFIGURAÇÃO DO FIREBASE ---
-const firebaseConfig = {
-  apiKey: "AIzaSyAu4CdKcPyB3Cp-EOgH_IXC_Iunip9L3wo",
-  authDomain: "cigarats.firebaseapp.com",
-  projectId: "cigarats",
-  storageBucket: "cigarats.firebasestorage.app",
-  messagingSenderId: "15257458742",
-  appId: "1:15257458742:web:cb7e0b55f5a705fdcde097",
-  measurementId: "G-JV5BZJ84F7"
-};
-
-// Inicialização
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-
-// Coleções
-const USERS_COLLECTION = 'users';
-const POSTS_COLLECTION = 'posts';
-const GROUPS_COLLECTION = 'groups';
-
-// --- CATALOGO DA TABACARIA ---
-const SHOP_ITEMS = [
-  { id: 'frame_neon', type: 'frame', name: 'Vibe Radioativa', price: 50, cssClass: 'ring-4 ring-green-400 shadow-[0_0_10px_#4ade80]', desc: 'Brilha no escuro (mentira).' },
-  { id: 'frame_fire', type: 'frame', name: 'Em Chamas', price: 100, cssClass: 'ring-4 ring-orange-600 shadow-[0_0_15px_#ea580c]', desc: 'Literalmente pegando fogo.' },
-  { id: 'frame_gold', type: 'frame', name: 'Rei do Camelo', price: 300, cssClass: 'ring-4 ring-yellow-400 border-yellow-200 shadow-xl', desc: 'Ostentação pura.' },
-  { id: 'filter_noir', type: 'filter', name: 'Noir Depressivo', price: 75, cssClass: 'grayscale contrast-125', desc: 'Para momentos reflexivos.' },
-  { id: 'filter_toxic', type: 'filter', name: 'Névoa Tóxica', price: 75, cssClass: 'sepia hue-rotate-90 saturate-200', desc: 'Parece que você fuma urânio.' },
-  { id: 'title_sus', type: 'title', name: 'Futuro Cliente do SUS', price: 150, desc: 'Título honesto.' },
-  { id: 'title_oms', type: 'title', name: 'Terror da OMS', price: 200, desc: 'Ameaça à saúde pública.' },
-  { id: 'title_investor', type: 'title', name: 'Sócio da Souza Cruz', price: 500, desc: 'Você pagou o iate do dono.' },
-];
-
-// --- MEDALHAS (Sistema Automático) ---
-const MEDALS = [
-    { id: 'bronze', name: 'Pulmão de Bronze', threshold: 50, icon: '🥉', desc: '50 cigarros fumados.' },
-    { id: 'silver', name: 'Pulmão de Prata', threshold: 200, icon: '🥈', desc: '200 cigarros. Haja fôlego.' },
-    { id: 'gold', name: 'Pulmão de Ouro', threshold: 500, icon: '🥇', desc: '500 cigarros. Lenda urbana.' },
-    { id: 'diamond', name: 'Chaminé Industrial', threshold: 1000, icon: '💎', desc: '1000 cigarros. Como você tá vivo?' },
-];
-
-// --- UTILITÁRIOS ---
-
-const getLevel = (xp) => {
-  if (xp < 50) return { title: "Fumante de Fim de Semana", color: "text-gray-400" };
-  if (xp < 150) return { title: "Pulmão de Aço", color: "text-green-400" };
-  if (xp < 300) return { title: "Chaminé Humana", color: "text-yellow-400" };
-  if (xp < 600) return { title: "Dragão Urbano", color: "text-orange-500" };
-  return { title: "Lorde da Nicotina", color: "text-red-600 font-bold" };
-};
-
-const compressImage = (file) => {
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = (event) => {
-      const img = new Image();
-      img.src = event.target.result;
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 600;
-        const scaleSize = MAX_WIDTH / img.width;
-        canvas.width = MAX_WIDTH;
-        canvas.height = img.height * scaleSize;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL('image/jpeg', 0.6));
-      };
-    };
-  });
-};
-
-const PRESET_AVATARS = [
-  "https://api.dicebear.com/7.x/avataaars/svg?seed=Felix",
-  "https://api.dicebear.com/7.x/avataaars/svg?seed=Aneka",
-  "https://api.dicebear.com/7.x/bottts/svg?seed=CigarBot",
-  "https://api.dicebear.com/7.x/fun-emoji/svg?seed=Smoke",
-  "https://api.dicebear.com/7.x/adventurer/svg?seed=Captain",
-  "https://api.dicebear.com/7.x/lorelei/svg?seed=Witch",
-];
-
-const BitucaIcon = ({ className }) => (
-  <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
-    <path d="M17,2H7C5.9,2,5,2.9,5,4v16c0,1.1,0.9,2,2,2h10c1.1,0,2-0.9,2-2V4C19,2.9,18.1,2,17,2z M7,16h10v4H7V16z M7,14V4h10v10H7z" fillOpacity="0.3" />
-    <path d="M16 5H8v2h8V5zM16 9H8v2h8V9z" />
-    <circle cx="9" cy="18" r="1" className="text-orange-500" fill="currentColor" />
-    <circle cx="12" cy="19" r="1" className="text-orange-500" fill="currentColor" />
-    <path d="M18 20l2 2m-2-2l2-2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-gray-400 opacity-50" />
-  </svg>
-);
+import { auth, db, USERS_COLLECTION, POSTS_COLLECTION, GROUPS_COLLECTION } from './config/firebase';
+import { SHOP_ITEMS, getShopItemById } from './data/shopItems';
+import { MEDALS, getEarnedMedals } from './data/medals';
+import { getLevel } from './utils/levelUtils';
+import { compressImage, PRESET_AVATARS, generateDefaultAvatar } from './utils/imageUtils';
+import { calculateObituaryStats } from './utils/obituaryUtils';
+import BitucaIcon from './components/shared/BitucaIcon';
 
 // --- COMPONENTES ---
 
