@@ -2214,7 +2214,6 @@ function UploadScreen({ onPost, onCancel, userProfile }) {
           type="file" 
           ref={fileInputRef} 
           accept="image/*" 
-          capture="environment"
           className="hidden" 
           onChange={handleFileChange} 
         />
