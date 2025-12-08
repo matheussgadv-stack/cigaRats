@@ -563,7 +563,7 @@ export default function App() {
         formData.append("resource_type", "video"); 
 
         const response = await fetch(
-          `https://api.cloudinary.com/v1_1/${dsva2wdls}/video/upload`, 
+          `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/video/upload`, 
           {
             method: "POST",
             body: formData
@@ -2275,7 +2275,7 @@ function UploadScreen({ onPost, onCancel, userProfile }) {
               <Camera className="w-10 h-10 text-orange-500" />
             </div>
             <p className="text-slate-300 font-bold text-lg">Foto ou Vídeo Curto</p>
-            <p className="text-slate-500 text-sm mt-1">Máx 10seg ou 2MB</p>
+            <p className="text-slate-500 text-sm mt-1">Máx 10seg ou 100MB</p>
           </div>
         ) : (
           <div className={`flex-1 relative rounded-2xl overflow-hidden bg-black flex items-center justify-center border border-slate-800 ${mediaType === 'image' ? activeFilter : ''}`}>
