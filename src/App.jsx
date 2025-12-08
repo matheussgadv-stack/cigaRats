@@ -533,31 +533,63 @@ export default function App() {
   };
 
   // ==========================================================================
-  // POSTS E INTERAÇÕES / POSTS AND INTERACTIONS
+  // POSTS E INTERAÇÕES / POSTS AND INTERACTIONS ( handle post v. cloudinary)
   // ==========================================================================
   
   /**
    * Cria novo post (COM STREAK E BOOSTS)
    * Creates new post (WITH STREAK AND BOOSTS)
    */
-  const handlePost = async (imageData, caption, type = 'image') => {
-    if (!imageData) return;
+  const handlePost = async (mediaContent, caption, type = 'image') => {
+    if (!mediaContent) return;
+    
+    // Configurações do Cloudinary
+    const CLOUD_NAME = "dsva2wdls";
+    const UPLOAD_PRESET = "cigarats_videos";
     
     try {
+      let finalMediaUrl = mediaContent;
+
+      // Se for vídeo, faz upload pro Cloudinary
+      if (type === 'video' && mediaContent instanceof File) {
+        
+        // Avisa que está subindo (opcional: criar um estado de loading na tela depois)
+        console.log("Iniciando upload para o Cloudinary...");
+
+        const formData = new FormData();
+        formData.append("file", mediaContent);
+        formData.append("upload_preset", UPLOAD_PRESET);
+        // O resource_type 'video' é essencial para vídeos
+        formData.append("resource_type", "video"); 
+
+        const response = await fetch(
+          `https://api.cloudinary.com/v1_1/${dsva2wdls}/video/upload`, 
+          {
+            method: "POST",
+            body: formData
+          }
+        );
+
+        const data = await response.json();
+        
+        if (data.error) {
+          throw new Error(data.error.message);
+        }
+
+        finalMediaUrl = data.secure_url; // Link seguro (https) do vídeo
+        console.log("Upload concluído:", finalMediaUrl);
+      }
+
       // Aplicar boosts ativos / Apply active boosts
       const boostResult = applyBoosts(
-        userProfile.activeBoosts || [], 
-        10,  // XP base
-        10   // Bitucas base
+        userProfile.activeBoosts || [], 10, 10
       );
-      
-      // Atualizar streak / Update streak
       const streakData = updateStreak(userProfile, true);
       
       // Criar post / Create post
       await addDoc(collection(db, POSTS_COLLECTION), { 
         uid: user.uid, 
-        image: imageData,
+        image: finalMediaUrl, 
         mediaType: type,
         caption: caption, 
         timestamp: serverTimestamp(), 
@@ -586,7 +618,7 @@ export default function App() {
       setView('feed');
     } catch (e) { 
       console.error('Erro ao criar post:', e);
-      console.error('Error creating post:', e);
+      alert(`Erro no upload: ${e.message}`);
     }
   };
 
@@ -2169,40 +2201,37 @@ function UploadScreen({ onPost, onCancel, userProfile }) {
     const file = e.target.files[0];
     if (!file) return;
 
-    // LIMITE DE TAMANHO (Crucial para não travar o banco)
-    // 2MB é o limite seguro se estiver salvando direto no Firestore
-    const maxSizeInBytes = 2 * 1024 * 1024; 
+    // 1. LIMITE DE TAMANHO (100MB)
+    // Cálculo correto: 100 * 1024 * 1024 = 104.857.600 bytes
+    const maxSizeInBytes = 100 * 1024 * 1024; 
     
     if (file.size > maxSizeInBytes) {
-      alert("O arquivo é muito grande! O limite é 2MB para não engasgar o servidor.");
+      alert("O arquivo é muito grande! O limite é 100MB.");
       return;
     }
 
+    // 2. VERIFICAÇÃO SE É VÍDEO
     if (file.type.startsWith('video/')) {
-      // Lógica para Vídeo
       const video = document.createElement('video');
       video.preload = 'metadata';
       
       video.onloadedmetadata = function() {
         window.URL.revokeObjectURL(video.src);
-        // LIMITE DE TEMPO (Ex: 10 segundos)
+        
+        // 3. LIMITE DE TEMPO (10 Segundos)
+        // Aqui é onde você insere o código novo, DENTRO da lógica de vídeo
         if (video.duration > 10) {
-          alert("Vídeos devem ter no máximo 10 segundos!");
+          alert("Vídeo muito longo! O limite é 10 segundos para não virar palestra.");
           return;
         }
         
-        // Converter vídeo para Base64
-        const reader = new FileReader();
-        reader.readAsDataURL(file);
-        reader.onload = () => {
-          setMedia(reader.result);
-          setMediaType('video');
-        };
+        setMediaType('video');
+        setMedia(file); // Salva o arquivo pronto para o Cloudinary
       }
       video.src = URL.createObjectURL(file);
       
     } else {
-      // Lógica para Imagem (Mantida igual, usando sua função compressImage)
+      // Lógica para Imagem (Se não for vídeo)
       setMediaType('image');
       setMedia(await compressImage(file));
     }
