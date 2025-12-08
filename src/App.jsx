@@ -540,7 +540,7 @@ export default function App() {
    * Cria novo post (COM STREAK E BOOSTS)
    * Creates new post (WITH STREAK AND BOOSTS)
    */
-  const handlePost = async (imageData, caption) => {
+  const handlePost = async (imageData, caption, type = 'image') => {
     if (!imageData) return;
     
     try {
@@ -557,7 +557,8 @@ export default function App() {
       // Criar post / Create post
       await addDoc(collection(db, POSTS_COLLECTION), { 
         uid: user.uid, 
-        image: imageData, 
+        image: imageData,
+        mediaType: type,
         caption: caption, 
         timestamp: serverTimestamp(), 
         likes: [], 
@@ -1968,13 +1969,23 @@ function PostCard({ post, author, usersMap, currentUserUid, onLike, onComment, o
         )}
       </div>
       
-      {/* Imagem do Post */}
-      <div className={`relative bg-black flex items-center justify-center overflow-hidden min-h-[300px] ${activeFilter}`}>
-        <img 
-          src={post.image} 
-          className="w-full h-auto max-h-[500px] object-contain" 
-          alt="post" 
-        />
+      {/* Mídia do Post (Imagem ou Vídeo) */}
+      <div className={`relative bg-black flex items-center justify-center overflow-hidden min-h-[300px] ${post.mediaType === 'image' ? activeFilter : ''}`}>
+        {post.mediaType === 'video' ? (
+          <video 
+            src={post.image} 
+            className="w-full h-auto max-h-[500px]" 
+            controls 
+            playsInline 
+            loop
+          />
+        ) : (
+          <img 
+            src={post.image} 
+            className="w-full h-auto max-h-[500px] object-contain" 
+            alt="post" 
+          />
+        )}
       </div>
       
       {/* Legenda */}
@@ -2149,13 +2160,51 @@ src={user.avatar}
 // UPLOAD SCREEN
 // ============================================================================
 function UploadScreen({ onPost, onCancel, userProfile }) {
-  const [image, setImage] = useState(null);
+  const [media, setMedia] = useState(null); // Substitui 'image'
+  const [mediaType, setMediaType] = useState('image'); // 'image' ou 'video'
   const [caption, setCaption] = useState('');
   const fileInputRef = useRef(null);
   
   const handleFileChange = async (e) => {
-    if (e.target.files[0]) {
-      setImage(await compressImage(e.target.files[0]));
+    const file = e.target.files[0];
+    if (!file) return;
+
+    // LIMITE DE TAMANHO (Crucial para não travar o banco)
+    // 2MB é o limite seguro se estiver salvando direto no Firestore
+    const maxSizeInBytes = 2 * 1024 * 1024; 
+    
+    if (file.size > maxSizeInBytes) {
+      alert("O arquivo é muito grande! O limite é 2MB para não engasgar o servidor.");
+      return;
+    }
+
+    if (file.type.startsWith('video/')) {
+      // Lógica para Vídeo
+      const video = document.createElement('video');
+      video.preload = 'metadata';
+      
+      video.onloadedmetadata = function() {
+        window.URL.revokeObjectURL(video.src);
+        // LIMITE DE TEMPO (Ex: 10 segundos)
+        if (video.duration > 10) {
+          alert("Vídeos devem ter no máximo 10 segundos!");
+          return;
+        }
+        
+        // Converter vídeo para Base64
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = () => {
+          setMedia(reader.result);
+          setMediaType('video');
+        };
+      }
+      video.src = URL.createObjectURL(file);
+      
+    } else {
+      // Lógica para Imagem (Mantida igual, usando sua função compressImage)
+      setMediaType('image');
+      setMedia(await compressImage(file));
     }
   };
   
@@ -2174,10 +2223,11 @@ function UploadScreen({ onPost, onCancel, userProfile }) {
         </button>
         <span className="font-bold text-white">Registrar Fumaça</span>
         <button 
-          onClick={() => onPost(image, caption)} 
-          disabled={!image} 
+          // Passamos o tipo junto com a mídia
+          onClick={() => onPost(media, caption, mediaType)} 
+          disabled={!media} 
           className={`font-bold px-4 py-1.5 rounded-full transition-colors ${
-            image 
+            media 
               ? 'bg-orange-600 text-white hover:bg-orange-500' 
               : 'bg-slate-800 text-slate-500 cursor-not-allowed'
           }`}
@@ -2187,7 +2237,7 @@ function UploadScreen({ onPost, onCancel, userProfile }) {
       </div>
       
       <div className="flex-1 flex flex-col p-4 gap-4">
-        {!image ? (
+        {!media ? (
           <div 
             onClick={() => fileInputRef.current?.click()} 
             className="flex-1 bg-slate-900/50 border-2 border-dashed border-slate-800 rounded-2xl flex flex-col items-center justify-center cursor-pointer hover:border-orange-500 hover:bg-slate-900 transition-all group"
@@ -2195,15 +2245,27 @@ function UploadScreen({ onPost, onCancel, userProfile }) {
             <div className="bg-slate-800 p-6 rounded-full mb-4 group-hover:scale-110 transition-transform group-hover:bg-slate-700">
               <Camera className="w-10 h-10 text-orange-500" />
             </div>
-            <p className="text-slate-300 font-bold text-lg">Tirar foto</p>
-            <p className="text-slate-500 text-sm mt-1">Registre o momento do câncer</p>
+            <p className="text-slate-300 font-bold text-lg">Foto ou Vídeo Curto</p>
+            <p className="text-slate-500 text-sm mt-1">Máx 10seg ou 2MB</p>
           </div>
         ) : (
-          <div className={`flex-1 relative rounded-2xl overflow-hidden bg-black flex items-center justify-center border border-slate-800 ${activeFilter}`}>
-            <img src={image} className="max-w-full max-h-full object-contain" />
+          <div className={`flex-1 relative rounded-2xl overflow-hidden bg-black flex items-center justify-center border border-slate-800 ${mediaType === 'image' ? activeFilter : ''}`}>
+            {/* Visualização condicional */}
+            {mediaType === 'video' ? (
+              <video 
+                src={media} 
+                className="max-w-full max-h-full object-contain" 
+                controls 
+                autoPlay 
+                loop
+              />
+            ) : (
+              <img src={media} className="max-w-full max-h-full object-contain" />
+            )}
+
             <button 
-              onClick={() => setImage(null)} 
-              className="absolute top-4 right-4 bg-black/60 backdrop-blur-sm p-2 rounded-full text-white hover:bg-red-600/80 transition-colors"
+              onClick={() => { setMedia(null); setMediaType('image'); }} 
+              className="absolute top-4 right-4 bg-black/60 backdrop-blur-sm p-2 rounded-full text-white hover:bg-red-600/80 transition-colors z-10"
             >
               <X className="w-5 h-5" />
             </button>
@@ -2213,7 +2275,8 @@ function UploadScreen({ onPost, onCancel, userProfile }) {
         <input 
           type="file" 
           ref={fileInputRef} 
-          accept="image/*" 
+          // ACEITAR VÍDEO E IMAGEM
+          accept="image/*, video/mp4, video/webm" 
           className="hidden" 
           onChange={handleFileChange} 
         />
