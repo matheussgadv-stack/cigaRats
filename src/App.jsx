@@ -59,6 +59,7 @@ import {
   GROUPS_COLLECTION 
 } from './config/firebase';
 
+import { Toaster, toast } from 'react-hot-toast';
 // ============================================================================
 // DADOS E UTILITÁRIOS / DATA AND UTILITIES
 // ============================================================================
@@ -407,7 +408,7 @@ export default function App() {
    */
   const handleBuyItem = async (item) => {
     if (userProfile.balance < item.price) { 
-      alert("Bitucas insuficientes! / Insufficient bitucas!"); 
+      toast.error("Bitucas insuficientes! Vá fumar um pouco. 🚬"); 
       return; 
     }
     
@@ -419,7 +420,7 @@ export default function App() {
         balance: increment(-item.price), 
         inventory: arrayUnion(item.id) 
       });
-      alert(`Você comprou: ${item.name}! / You bought: ${item.name}!`);
+      toast.success(`Você comprou: ${item.name}! 🛒`);
     } catch (e) { 
       console.error('Erro ao comprar item:', e);
       console.error('Error buying item:', e);
@@ -431,15 +432,16 @@ export default function App() {
    * Purchases and activates consumable (boost)
    */
   const handleBuyConsumable = async (item) => {
+    // 1. Verificação de saldo com Toast de Erro
     if (userProfile.balance < item.price) { 
-      alert("Bitucas insuficientes! / Insufficient bitucas!"); 
+      toast.error("Bitucas insuficientes! Vá farmar mais. 💸");
       return; 
     }
     
     try {
       const userRef = doc(db, USERS_COLLECTION, user.uid);
       
-      // Ativar boost imediatamente / Activate boost immediately
+      // Ativar boost imediatamente
       const newBoost = {
         id: item.id,
         name: item.name,
@@ -453,10 +455,13 @@ export default function App() {
         activeBoosts: arrayUnion(newBoost)
       });
       
-      alert(`✅ ${item.name} ativado! / ${item.name} activated!`);
+      // 2. Sucesso com Toast Animado
+      toast.success(`⚡ ${item.name} ativado! Aproveite o bônus.`);
+      
     } catch (e) { 
       console.error('Erro ao comprar consumível:', e);
-      console.error('Error buying consumable:', e);
+      // 3. Segurança extra: avisa se der erro no banco
+      toast.error("Erro ao ativar o boost. Tente novamente.");
     }
   };
 
@@ -717,13 +722,13 @@ export default function App() {
       // Notificação se tiver boost ativo
       // Notification if boost is active
       if (boostResult.multipliers.xp > 1) {
-        alert(`🔥 Boost ativo! +${boostResult.xp} XP (${boostResult.multipliers.xp}x)`);
+        toast("🔥 Boost ativo! XP Multiplicado!", { icon: '🔥' });
       }
       
       setView('feed');
     } catch (e) { 
       console.error('Erro ao criar post:', e);
-      alert(`Erro no upload: ${e.message}`);
+      toast.error(`Falha ao postar: ${e.message}`);
     }
   };
 
@@ -807,7 +812,8 @@ export default function App() {
    * Updates user profile
    */
   const handleUpdateProfile = async (newName, newAvatar) => {
-    try {
+    // Definimos a promessa (o processo de salvar)
+    const savePromise = async () => {
       const userRef = doc(db, USERS_COLLECTION, user.uid);
       await updateDoc(userRef, { 
         name: newName, 
@@ -820,11 +826,16 @@ export default function App() {
         avatar: newAvatar 
       }));
       
-      setView('feed');
-    } catch (e) { 
-      alert("Erro ao salvar / Error saving");
-      console.error(e);
-    }
+      // Espera um pouquinho só pra pessoa ler a mensagem antes de mudar a tela
+      setTimeout(() => setView('feed'), 1000); 
+    };
+
+    // O toast.promise cuida de tudo: mostra "Carregando", depois "Sucesso" ou "Erro"
+    await toast.promise(savePromise(), {
+      loading: 'Salvando alterações...',
+      success: 'Perfil atualizado com sucesso! ✨',
+      error: 'Erro ao salvar. Tente novamente. ❌',
+    });
   };
 
   // ==========================================================================
@@ -1188,6 +1199,31 @@ export default function App() {
         onClose={() => setShowNotificationGuide(false)}
         currentPermission={getNotificationPermission()}
       />
+
+      {/* ---------------- TOASTER---------------- */}
+      <Toaster 
+        position="top-center"
+        toastOptions={{
+          style: {
+            background: '#1e293b', // Cor Slate-800 (Escuro)
+            color: '#fff',         // Texto Branco
+            border: '1px solid #334155',
+          },
+          success: {
+            iconTheme: {
+              primary: '#16a34a', // Verde
+              secondary: '#fff',
+            },
+          },
+          error: {
+            iconTheme: {
+              primary: '#ef4444', // Vermelho
+              secondary: '#fff',
+            },
+          },
+        }}
+      />
+      {/* ----------------------------------------------- */}
     </div>
   );
 }
