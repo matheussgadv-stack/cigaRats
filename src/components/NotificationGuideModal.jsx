@@ -1,6 +1,7 @@
 import React from 'react';
 import { X, Bell, CheckCircle } from 'lucide-react';
-import { NOTIFICATION_GUIDES, detectBrowser } from '../utils/notificationUtils';
+import { NOTIFICATION_GUIDES, detectBrowser, requestNotificationPermission } from '../utils/notificationUtils'; // <--- Importei a função aqui
+import { auth } from '../config/firebase'; // <--- Importei o auth para pegar o ID do usuário
 
 /**
  * Modal com guia de ativação de notificações
@@ -10,6 +11,18 @@ const NotificationGuideModal = ({ isOpen, onClose, currentPermission }) => {
   
   const browserKey = detectBrowser();
   const guide = NOTIFICATION_GUIDES[browserKey];
+
+  // Função que ativa as notificações ao clicar no botão
+  const handleActivate = async () => {
+    const uid = auth.currentUser?.uid;
+    const success = await requestNotificationPermission(uid);
+    
+    if (success) {
+      alert("Notificações ativadas com sucesso! 🔔");
+      onClose();
+      window.location.reload(); // Recarrega para atualizar o status
+    }
+  };
   
   return (
     <div 
@@ -54,7 +67,7 @@ const NotificationGuideModal = ({ isOpen, onClose, currentPermission }) => {
             <>
               <div className="bg-red-900/30 border border-red-700 rounded-lg p-4">
                 <p className="text-red-400 font-bold text-sm mb-2">⚠️ Notificações Bloqueadas</p>
-                <p className="text-red-300 text-xs">Você bloqueou as notificações. Siga o guia abaixo para ativar:</p>
+                <p className="text-red-300 text-xs">Você bloqueou as notificações anteriormente. Siga o guia abaixo para desbloquear:</p>
               </div>
               
               <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
@@ -73,23 +86,35 @@ const NotificationGuideModal = ({ isOpen, onClose, currentPermission }) => {
               </div>
             </>
           ) : (
-            <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
-              <p className="text-slate-300 text-sm mb-3">
-                Ative as notificações para receber:
-              </p>
-              <ul className="space-y-2 text-xs text-slate-400">
-                <li>🔥 Alertas de streak em risco</li>
-                <li>💬 Novos comentários e curtidas</li>
-                <li>⏰ Boosts expirando</li>
-                <li>🏆 Conquistas desbloqueadas</li>
-              </ul>
-            </div>
+            // ESTADO PADRÃO (Ainda não ativou)
+            <>
+              <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
+                <p className="text-slate-300 text-sm mb-3">
+                  Ative as notificações para receber:
+                </p>
+                <ul className="space-y-2 text-xs text-slate-400">
+                  <li>🔥 Alertas de streak em risco</li>
+                  <li>💬 Novos comentários e curtidas</li>
+                  <li>⏰ Boosts expirando</li>
+                  <li>🏆 Conquistas desbloqueadas</li>
+                </ul>
+              </div>
+
+              {/* BOTÃO DE ATIVAÇÃO (Faltava isso!) */}
+              <button 
+                onClick={handleActivate}
+                className="w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-3 rounded-xl transition-all shadow-lg hover:shadow-orange-500/20 active:scale-95 flex items-center justify-center gap-2"
+              >
+                <Bell className="w-5 h-5" />
+                Ativar Notificações Agora
+              </button>
+            </>
           )}
           
           {/* Footer */}
           <div className="pt-4 border-t border-slate-800">
             <p className="text-[10px] text-slate-600 text-center">
-              💡 As notificações só funcionam quando o navegador está aberto
+              💡 As notificações funcionam melhor quando o app está instalado (PWA)
             </p>
           </div>
         </div>

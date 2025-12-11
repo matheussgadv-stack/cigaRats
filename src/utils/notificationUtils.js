@@ -1,16 +1,20 @@
-// --- SISTEMA DE NOTIFICAÇÕES DO NAVEGADOR ---
+// src/utils/notificationUtils.js
+import { getToken } from "firebase/messaging";
+import { messaging, db, USERS_COLLECTION } from "../config/firebase";
+import { doc, updateDoc } from "firebase/firestore";
+
+// --- (GERADA NA ABA CLOUD MESSAGING DO FIREBASE "Par de chaves") ---
+const VAPID_KEY = "BK6kwy30xUToQumGQNBWO6YjuTWRMgEym24oQ16FrVlALVP_ubrS2_PgRfZ7z39MKCHOmIYkhPidfFqIFe5xfnQ"; 
 
 /**
- * Verifica se notificações são suportadas
- * @returns {boolean}
+ * Verifica se o navegador suporta notificações
  */
 export const isNotificationSupported = () => {
-  return 'Notification' in window;
+  return 'Notification' in window && 'serviceWorker' in navigator;
 };
 
 /**
- * Verifica permissão atual
- * @returns {string} 'granted' | 'denied' | 'default'
+ * Verifica o status atual da permissão ('granted', 'denied', 'default')
  */
 export const getNotificationPermission = () => {
   if (!isNotificationSupported()) return 'denied';
@@ -18,165 +22,70 @@ export const getNotificationPermission = () => {
 };
 
 /**
- * Solicita permissão de notificação
- * @returns {Promise<string>} Permissão concedida
+ * Solicita permissão e, se aceito, pega o Token do Firebase
+ * @param {string} uid - ID do usuário logado (para salvar o token no perfil dele)
  */
-export const requestNotificationPermission = async () => {
+export const requestNotificationPermission = async (uid) => {
   if (!isNotificationSupported()) {
-    throw new Error('Notificações não suportadas neste navegador');
+    console.log("Navegador não suporta notificações push.");
+    return false;
   }
-  
+
   try {
     const permission = await Notification.requestPermission();
-    return permission;
+    
+    if (permission === "granted") {
+      console.log("Permissão concedida! Buscando token...");
+      
+      // Pega o endereço digital (Token) do celular
+      const currentToken = await getToken(messaging, { 
+        vapidKey: VAPID_KEY 
+      });
+
+      if (currentToken) {
+        console.log("Token gerado:", currentToken);
+        
+        // Se tiver usuário logado, salva o token no banco de dados
+        if (uid) {
+          const userRef = doc(db, USERS_COLLECTION, uid);
+          await updateDoc(userRef, { 
+            fcmToken: currentToken,
+            notificationsEnabled: true 
+          });
+          console.log("Token salvo no perfil do usuário.");
+        }
+        return true;
+      } else {
+        console.log("Nenhum token de registro disponível. Peça permissão para gerar um.");
+        return false;
+      }
+    } else {
+      console.log("Permissão de notificação negada.");
+      return false;
+    }
   } catch (error) {
-    console.error('Erro ao solicitar permissão:', error);
-    return 'denied';
+    console.error("Erro ao configurar notificações:", error);
+    return false;
   }
 };
 
 /**
- * Envia notificação local
- * @param {string} title - Título da notificação
- * @param {Object} options - Opções da notificação
- */
-export const sendNotification = (title, options = {}) => {
-  if (getNotificationPermission() !== 'granted') {
-    console.warn('Permissão de notificação negada');
-    return null;
-  }
-  
-  const defaultOptions = {
-    icon: '/vite.svg', // Ícone do app
-    badge: '/vite.svg',
-    vibrate: [200, 100, 200],
-    ...options
-  };
-  
-  try {
-    return new Notification(title, defaultOptions);
-  } catch (error) {
-    console.error('Erro ao enviar notificação:', error);
-    return null;
-  }
-};
-
-/**
- * Notificações específicas do cigaRats
- */
-export const cigaRatsNotifications = {
-  streakReminder: () => {
-    sendNotification('🔥 Sua ofensiva está em risco!', {
-      body: 'Você não fumou hoje. Mantenha o streak vivo!',
-      tag: 'streak-reminder',
-      requireInteraction: false
-    });
-  },
-  
-  streakBroken: (days) => {
-    sendNotification('💔 Ofensiva perdida!', {
-      body: `Seu streak de ${days} dias acabou. Comece de novo!`,
-      tag: 'streak-broken'
-    });
-  },
-  
-  levelUp: (newLevel) => {
-    sendNotification('🎉 Level Up!', {
-      body: `Você alcançou: ${newLevel}`,
-      tag: 'level-up'
-    });
-  },
-  
-  newComment: (authorName, postId) => {
-    sendNotification('💬 Novo comentário', {
-      body: `${authorName} comentou na sua foto`,
-      tag: `comment-${postId}`,
-      data: { type: 'comment', postId }
-    });
-  },
-  
-  newLike: (likerName) => {
-    sendNotification('❤️ Nova curtida', {
-      body: `${likerName} curtiu sua foto`,
-      tag: 'new-like'
-    });
-  },
-  
-  boostExpiring: (boostName, minutes) => {
-    sendNotification('⏰ Boost expirando!', {
-      body: `"${boostName}" acaba em ${minutes} minutos`,
-      tag: 'boost-expiring'
-    });
-  }
-};
-
-/**
- * Guia de ativação por navegador
- */
-export const NOTIFICATION_GUIDES = {
-  chrome: {
-    name: 'Google Chrome',
-    steps: [
-      'Clique no ícone de cadeado 🔒 na barra de endereço',
-      'Procure por "Notificações"',
-      'Selecione "Permitir"',
-      'Recarregue a página'
-    ],
-    icon: '🌐'
-  },
-  firefox: {
-    name: 'Mozilla Firefox',
-    steps: [
-      'Clique no ícone (i) na barra de endereço',
-      'Vá em "Permissões"',
-      'Ao lado de "Notificações", clique em "Bloquear" e mude para "Permitir"',
-      'Recarregue a página'
-    ],
-    icon: '🦊'
-  },
-  safari: {
-    name: 'Safari',
-    steps: [
-      'Abra Preferências do Safari',
-      'Vá em "Sites" > "Notificações"',
-      'Encontre cigarats e permita',
-      'Recarregue a página'
-    ],
-    icon: '🧭'
-  },
-  edge: {
-    name: 'Microsoft Edge',
-    steps: [
-      'Clique no cadeado na barra de endereço',
-      'Clique em "Permissões para este site"',
-      'Ative "Notificações"',
-      'Recarregue a página'
-    ],
-    icon: '🌊'
-  },
-  default: {
-    name: 'Seu Navegador',
-    steps: [
-      'Procure pelo ícone de configurações na barra de endereço',
-      'Encontre as configurações de "Notificações"',
-      'Permita notificações para este site',
-      'Recarregue a página'
-    ],
-    icon: '🌐'
-  }
-};
-
-/**
- * Detecta navegador do usuário
- * @returns {string} Nome do navegador
+ * Detecta navegador (apenas visual, mantido do seu código antigo)
  */
 export const detectBrowser = () => {
   const userAgent = navigator.userAgent.toLowerCase();
-  
   if (userAgent.includes('chrome') && !userAgent.includes('edg')) return 'chrome';
   if (userAgent.includes('firefox')) return 'firefox';
   if (userAgent.includes('safari') && !userAgent.includes('chrome')) return 'safari';
   if (userAgent.includes('edg')) return 'edge';
-  
   return 'default';
+};
+
+// Mantivemos o objeto de guias para o seu Modal não quebrar
+export const NOTIFICATION_GUIDES = {
+  chrome: { name: 'Google Chrome', icon: '🌐' },
+  firefox: { name: 'Mozilla Firefox', icon: '🦊' },
+  safari: { name: 'Safari', icon: '🧭' },
+  edge: { name: 'Microsoft Edge', icon: '🌊' },
+  default: { name: 'Seu Navegador', icon: '🌐' }
 };
