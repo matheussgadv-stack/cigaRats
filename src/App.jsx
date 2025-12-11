@@ -13,7 +13,8 @@ import {
   PlusCircle, LogOut, Globe, AlertCircle, Settings, Edit2, 
   Image as ImageIcon, Trash2, AlertTriangle, Users, Search, 
   Crown, ArrowRight, DoorOpen, UserPlus, UserMinus, ShoppingBag, 
-  Check, Lock, Skull, Clock, Banknote, MapPin, Medal, Bell 
+  Check, Lock, Skull, Clock, Banknote, MapPin, Medal, Bell,
+  Play, Pause, Volume2, VolumeX
 } from 'lucide-react';
 
 // ============================================================================
@@ -82,6 +83,106 @@ import ActiveBoosts from './components/shared/ActiveBoosts';
 import NotificationGuideModal from './components/NotificationGuideModal';
 
 // ============================================================================
+// VERSÃO DO APP
+// ============================================================================
+const APP_VERSION = "v1.2.0 (Beta)";
+
+// ============================================================================
+// COMPONENTE DE VIDEO PLAYER (ESTILO INSTAGRAM)
+// ============================================================================
+import { Play, Pause, Volume2, VolumeX } from 'lucide-react'; // Certifique-se de importar esses ícones lá em cima
+
+function VideoPlayer({ src, activeFilter }) {
+  const videoRef = useRef(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isMuted, setIsMuted] = useState(true); // Começa mudo para permitir autoplay
+  const [showControls, setShowControls] = useState(false); // Para animação de play/pause
+
+  useEffect(() => {
+    const options = {
+      root: null,
+      rootMargin: '0px',
+      threshold: 0.6 // Só toca se 60% do vídeo estiver visível
+    };
+
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          // Entrou na tela: Toca
+          videoRef.current.play().catch(error => {
+            console.log("Autoplay bloqueado pelo navegador:", error);
+          });
+          setIsPlaying(true);
+        } else {
+          // Saiu da tela: Pausa
+          videoRef.current.pause();
+          setIsPlaying(false);
+        }
+      });
+    }, options);
+
+    if (videoRef.current) {
+      observer.observe(videoRef.current);
+    }
+
+    return () => {
+      if (videoRef.current) observer.unobserve(videoRef.current);
+    };
+  }, []);
+
+  const togglePlay = (e) => {
+    e.stopPropagation(); // Evita abrir o post se clicar no player
+    if (videoRef.current.paused) {
+      videoRef.current.play();
+      setIsPlaying(true);
+    } else {
+      videoRef.current.pause();
+      setIsPlaying(false);
+    }
+    // Mostra o ícone de play/pause por 1 segundo
+    setShowControls(true);
+    setTimeout(() => setShowControls(false), 1000);
+  };
+
+  const toggleMute = (e) => {
+    e.stopPropagation();
+    videoRef.current.muted = !videoRef.current.muted;
+    setIsMuted(videoRef.current.muted);
+  };
+
+  return (
+    <div className="relative w-full h-full bg-black group" onClick={togglePlay}>
+      <video
+        ref={videoRef}
+        src={src}
+        className={`w-full h-auto max-h-[500px] object-contain ${activeFilter}`} // Aplica filtro se quiser
+        loop
+        muted={true} // Obrigatório para autoplay funcionar
+        playsInline // Obrigatório para iOS não abrir em tela cheia
+      />
+
+      {/* Ícone de Mute (Canto inferior direito) */}
+      <button 
+        onClick={toggleMute}
+        className="absolute bottom-3 right-3 bg-black/50 p-2 rounded-full text-white hover:bg-black/70 transition-colors backdrop-blur-sm z-10"
+      >
+        {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+      </button>
+
+      {/* Ícone de Play/Pause (Centralizado, aparece ao clicar) */}
+      <div className={`absolute inset-0 flex items-center justify-center transition-opacity duration-300 pointer-events-none ${showControls ? 'opacity-100' : 'opacity-0'}`}>
+        <div className="bg-black/40 p-4 rounded-full backdrop-blur-sm">
+          {isPlaying ? (
+            <Pause className="w-8 h-8 text-white fill-current" />
+          ) : (
+            <Play className="w-8 h-8 text-white fill-current" />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+// ============================================================================
 // COMPONENTE PRINCIPAL / MAIN COMPONENT
 // ============================================================================
 export default function App() {
@@ -97,7 +198,7 @@ export default function App() {
   const [groups, setGroups] = useState([]);
   const [selectedGroup, setSelectedGroup] = useState(null);
   const [loading, setLoading] = useState(true);
-  
+    
   // ID do perfil sendo visualizado / ID of profile being viewed
   const [viewProfileUid, setViewProfileUid] = useState(null);
   
@@ -2001,23 +2102,21 @@ function PostCard({ post, author, usersMap, currentUserUid, onLike, onComment, o
         )}
       </div>
       
-      {/* Mídia do Post (Imagem ou Vídeo) */}
-      <div className={`relative bg-black flex items-center justify-center overflow-hidden min-h-[300px] ${post.mediaType === 'image' ? activeFilter : ''}`}>
-        {post.mediaType === 'video' ? (
-          <video 
-            src={post.image} 
-            className="w-full h-auto max-h-[500px]" 
-            controls 
-            playsInline 
-            loop
-          />
-        ) : (
-          <img 
-            src={post.image} 
-            className="w-full h-auto max-h-[500px] object-contain" 
-            alt="post" 
-          />
-        )}
+      {/* Mídia do Post (Imagem ou Vídeo) - COM BORDAS ARREDONDADAS */}
+      <div className="px-3 pb-2"> {/* Adicionei padding lateral para o arredondamento ficar bonito no card */}
+        <div className={`relative bg-black flex items-center justify-center overflow-hidden min-h-[300px] rounded-2xl border border-slate-800/50 ${post.mediaType === 'image' ? activeFilter : ''}`}>
+          {post.mediaType === 'video' ? (
+            // Usa o novo Player Inteligente
+            <VideoPlayer src={post.image} activeFilter={''} />
+          ) : (
+            // Imagem normal com arredondamento
+            <img 
+              src={post.image} 
+              className="w-full h-auto max-h-[500px] object-contain" 
+              alt="post" 
+            />
+          )}
+        </div>
       </div>
       
       {/* Legenda */}
@@ -2419,6 +2518,20 @@ function SettingsScreen({ profile, onUpdate, onDeleteAccount, onOpenNotification
         >
           <Trash2 className="w-4 h-4" /> Excluir Conta
         </button>
+      </div>
+      {/* Zona de Perigo */}
+      <div className="bg-slate-900 p-6 rounded-2xl border border-red-900/50">
+          {/* ... conteúdo existente da zona de perigo ... */}
+      </div>
+
+      {/* RODAPÉ DA VERSÃO (NOVO) */}
+      <div className="text-center pb-8 pt-4">
+        <p className="text-slate-600 text-xs font-mono font-bold uppercase tracking-widest opacity-50">
+          cigaRats {APP_VERSION}
+        </p>
+        <p className="text-[10px] text-slate-700 mt-1">
+          Feito com 🚬 e ☕
+        </p>
       </div>
     </div>
   );
