@@ -91,7 +91,7 @@ import NotificationGuideModal from './components/NotificationGuideModal';
 // ============================================================================
 // VERSÃO DO APP
 // ============================================================================
-const APP_VERSION = "v1.3.0 (Beta)";
+const APP_VERSION = "v1.3.5 (Beta)";
 
 // ============================================================================
 // COMPONENTE DE VIDEO PLAYER (ESTILO INSTAGRAM)
@@ -2357,10 +2357,9 @@ function UploadScreen({ onPost, onCancel, userProfile }) {
       video.onloadedmetadata = function() {
         window.URL.revokeObjectURL(video.src);
         
-        // 3. LIMITE DE TEMPO (10 Segundos)
-        // Aqui é onde você insere o código novo, DENTRO da lógica de vídeo
-        if (video.duration > 10) {
-          toast.error("Vídeo muito longo! O limite é 10 segundos para não virar palestra.");
+        // 3. LIMITE DE TEMPO (15 Segundos)
+                if (video.duration > 10) {
+          toast.error("Vídeo muito longo! O limite é 15 segundos para não virar palestra.");
           return;
         }
         
@@ -2414,21 +2413,24 @@ function UploadScreen({ onPost, onCancel, userProfile }) {
               <Camera className="w-10 h-10 text-orange-500" />
             </div>
             <p className="text-slate-300 font-bold text-lg">Foto ou Vídeo Curto</p>
-            <p className="text-slate-500 text-sm mt-1">Máx 10seg ou 100MB</p>
+            <p className="text-slate-500 text-sm mt-1">Máx 15seg ou 100MB</p>
           </div>
         ) : (
           <div className={`flex-1 relative rounded-2xl overflow-hidden bg-black flex items-center justify-center border border-slate-800 ${mediaType === 'image' ? activeFilter : ''}`}>
-            {/* Visualização condicional */}
+            
+            {/* PRÉ-VISUALIZAÇÃO CORRIGIDA */}
             {mediaType === 'video' ? (
               <video 
-                src={media} 
+                // O segredo está aqui: Se for um Arquivo (File), cria uma URL temporária. Se for string (link), usa direto.
+                src={media instanceof File ? URL.createObjectURL(media) : media} 
                 className="max-w-full max-h-full object-contain" 
                 controls 
                 autoPlay 
                 loop
+                playsInline
               />
             ) : (
-              <img src={media} className="max-w-full max-h-full object-contain" />
+              <img src={media} className="max-w-full max-h-full object-contain" alt="Preview" />
             )}
 
             <button 
