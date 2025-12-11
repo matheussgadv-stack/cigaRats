@@ -90,7 +90,6 @@ const APP_VERSION = "v1.2.0 (Beta)";
 // ============================================================================
 // COMPONENTE DE VIDEO PLAYER (ESTILO INSTAGRAM)
 // ============================================================================
-import { Play, Pause, Volume2, VolumeX } from 'lucide-react'; // Certifique-se de importar esses ícones lá em cima
 
 function VideoPlayer({ src, activeFilter }) {
   const videoRef = useRef(null);
