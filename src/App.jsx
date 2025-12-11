@@ -18,6 +18,11 @@ import {
 } from 'lucide-react';
 
 // ============================================================================
+// SENTRY
+// ============================================================================
+import * as Sentry from "@sentry/react";
+
+// ============================================================================
 // FIREBASE
 // ============================================================================
 import {  
@@ -85,7 +90,7 @@ import NotificationGuideModal from './components/NotificationGuideModal';
 // ============================================================================
 // VERSÃO DO APP
 // ============================================================================
-const APP_VERSION = "v1.2.0 (Beta)";
+const APP_VERSION = "v1.3.0 (Beta)";
 
 // ============================================================================
 // COMPONENTE DE VIDEO PLAYER (ESTILO INSTAGRAM)
@@ -2424,7 +2429,7 @@ function UploadScreen({ onPost, onCancel, userProfile }) {
 }
 
 // ============================================================================
-// SETTINGS SCREEN (COM BOTÃO DE NOTIFICAÇÕES)
+// SETTINGS SCREEN (CORRIGIDA E LIMPA)
 // ============================================================================
 function SettingsScreen({ profile, onUpdate, onDeleteAccount, onOpenNotifications }) {
   const [name, setName] = useState(profile.name);
@@ -2518,12 +2523,8 @@ function SettingsScreen({ profile, onUpdate, onDeleteAccount, onOpenNotification
           <Trash2 className="w-4 h-4" /> Excluir Conta
         </button>
       </div>
-      {/* Zona de Perigo */}
-      <div className="bg-slate-900 p-6 rounded-2xl border border-red-900/50">
-          {/* ... conteúdo existente da zona de perigo ... */}
-      </div>
-
-      {/* RODAPÉ DA VERSÃO (NOVO) */}
+      
+      {/* RODAPÉ DA VERSÃO */}
       <div className="text-center pb-8 pt-4">
         <p className="text-slate-600 text-xs font-mono font-bold uppercase tracking-widest opacity-50">
           cigaRats {APP_VERSION}
@@ -2535,7 +2536,6 @@ function SettingsScreen({ profile, onUpdate, onDeleteAccount, onOpenNotification
     </div>
   );
 }
-
 // ============================================================================
 // NAV BUTTON
 // ============================================================================

@@ -3,18 +3,18 @@ import { getToken } from "firebase/messaging";
 import { messaging, db, USERS_COLLECTION } from "../config/firebase";
 import { doc, updateDoc } from "firebase/firestore";
 
-// --- (GERADA NA ABA CLOUD MESSAGING DO FIREBASE "Par de chaves") ---
+// --- COLE AQUI A SUA VAPID KEY (A QUE VOCÊ GEROU NA ABA CLOUD MESSAGING) ---
 const VAPID_KEY = "BK6kwy30xUToQumGQNBWO6YjuTWRMgEym24oQ16FrVlALVP_ubrS2_PgRfZ7z39MKCHOmIYkhPidfFqIFe5xfnQ"; 
 
 /**
  * Verifica se o navegador suporta notificações
  */
 export const isNotificationSupported = () => {
-  return 'Notification' in window && 'serviceWorker' in navigator;
+  return 'Notification' in window;
 };
 
 /**
- * Verifica o status atual da permissão ('granted', 'denied', 'default')
+ * Verifica o status atual da permissão
  */
 export const getNotificationPermission = () => {
   if (!isNotificationSupported()) return 'denied';
@@ -23,11 +23,10 @@ export const getNotificationPermission = () => {
 
 /**
  * Solicita permissão e, se aceito, pega o Token do Firebase
- * @param {string} uid - ID do usuário logado (para salvar o token no perfil dele)
  */
 export const requestNotificationPermission = async (uid) => {
   if (!isNotificationSupported()) {
-    console.log("Navegador não suporta notificações push.");
+    console.log("Navegador não suporta notificações.");
     return false;
   }
 
@@ -37,41 +36,106 @@ export const requestNotificationPermission = async (uid) => {
     if (permission === "granted") {
       console.log("Permissão concedida! Buscando token...");
       
-      // Pega o endereço digital (Token) do celular
-      const currentToken = await getToken(messaging, { 
-        vapidKey: VAPID_KEY 
-      });
-
-      if (currentToken) {
-        console.log("Token gerado:", currentToken);
-        
-        // Se tiver usuário logado, salva o token no banco de dados
-        if (uid) {
+      // Tenta pegar o token do Firebase (Push)
+      try {
+        const currentToken = await getToken(messaging, { vapidKey: VAPID_KEY });
+        if (currentToken && uid) {
+          console.log("Token gerado:", currentToken);
           const userRef = doc(db, USERS_COLLECTION, uid);
           await updateDoc(userRef, { 
             fcmToken: currentToken,
             notificationsEnabled: true 
           });
-          console.log("Token salvo no perfil do usuário.");
         }
-        return true;
-      } else {
-        console.log("Nenhum token de registro disponível. Peça permissão para gerar um.");
-        return false;
+      } catch (err) {
+        console.warn("Erro ao pegar token do Firebase (pode ser localhost):", err);
+        // Não retorna false aqui, pois a permissão local foi concedida
       }
-    } else {
-      console.log("Permissão de notificação negada.");
-      return false;
+      return true;
     }
   } catch (error) {
     console.error("Erro ao configurar notificações:", error);
-    return false;
+  }
+  return false;
+};
+
+// ============================================================================
+// NOTIFICAÇÕES LOCAIS (RESTAURADO)
+// ============================================================================
+
+/**
+ * Envia notificação local simples
+ */
+export const sendNotification = (title, options = {}) => {
+  if (getNotificationPermission() !== 'granted') return null;
+  
+  const defaultOptions = {
+    icon: '/pwa-192x192.png',
+    badge: '/pwa-192x192.png',
+    vibrate: [200, 100, 200],
+    ...options
+  };
+  
+  try {
+    return new Notification(title, defaultOptions);
+  } catch (error) {
+    console.error('Erro ao enviar notificação local:', error);
+    return null;
   }
 };
 
 /**
- * Detecta navegador (apenas visual, mantido do seu código antigo)
+ * Objeto com as mensagens padrão do app (O QUE FALTAVA)
  */
+export const cigaRatsNotifications = {
+  streakReminder: () => {
+    sendNotification('🔥 Sua ofensiva está em risco!', {
+      body: 'Você não fumou hoje. Mantenha o streak vivo!',
+      tag: 'streak-reminder',
+      requireInteraction: false
+    });
+  },
+  
+  streakBroken: (days) => {
+    sendNotification('💔 Ofensiva perdida!', {
+      body: `Seu streak de ${days} dias acabou. Comece de novo!`,
+      tag: 'streak-broken'
+    });
+  },
+  
+  levelUp: (newLevel) => {
+    sendNotification('🎉 Level Up!', {
+      body: `Você alcançou: ${newLevel}`,
+      tag: 'level-up'
+    });
+  },
+  
+  newComment: (authorName, postId) => {
+    sendNotification('💬 Novo comentário', {
+      body: `${authorName} comentou na sua foto`,
+      tag: `comment-${postId}`,
+      data: { type: 'comment', postId }
+    });
+  },
+  
+  newLike: (likerName) => {
+    sendNotification('❤️ Nova curtida', {
+      body: `${likerName} curtiu sua foto`,
+      tag: 'new-like'
+    });
+  },
+  
+  boostExpiring: (boostName, minutes) => {
+    sendNotification('⏰ Boost expirando!', {
+      body: `"${boostName}" acaba em ${minutes} minutos`,
+      tag: 'boost-expiring'
+    });
+  }
+};
+
+// ============================================================================
+// UTILITÁRIOS DE NAVEGADOR
+// ============================================================================
 export const detectBrowser = () => {
   const userAgent = navigator.userAgent.toLowerCase();
   if (userAgent.includes('chrome') && !userAgent.includes('edg')) return 'chrome';
@@ -81,11 +145,10 @@ export const detectBrowser = () => {
   return 'default';
 };
 
-// Mantivemos o objeto de guias para o seu Modal não quebrar
 export const NOTIFICATION_GUIDES = {
-  chrome: { name: 'Google Chrome', icon: '🌐' },
-  firefox: { name: 'Mozilla Firefox', icon: '🦊' },
-  safari: { name: 'Safari', icon: '🧭' },
-  edge: { name: 'Microsoft Edge', icon: '🌊' },
-  default: { name: 'Seu Navegador', icon: '🌐' }
+  chrome: { name: 'Google Chrome', icon: '🌐', steps: ['Clique no cadeado 🔒', 'Permissões > Notificações', 'Permitir'] },
+  firefox: { name: 'Mozilla Firefox', icon: '🦊', steps: ['Clique no ícone (i)', 'Permissões', 'Permitir'] },
+  safari: { name: 'Safari', icon: '🧭', steps: ['Ajustes do Safari', 'Sites > Notificações', 'Permitir'] },
+  edge: { name: 'Microsoft Edge', icon: '🌊', steps: ['Clique no cadeado', 'Permissões', 'Ativar Notificações'] },
+  default: { name: 'Seu Navegador', icon: '🌐', steps: ['Configurações do site', 'Permitir notificações'] }
 };
