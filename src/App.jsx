@@ -394,7 +394,7 @@ export default function App() {
       setUserProfile(userData);
       setView('feed');
     } catch (e) { 
-      alert("Erro ao criar perfil / Error creating profile");
+      toast.error("Erro ao criar perfil / Error creating profile");
       console.error(e);
     }
   };
@@ -554,7 +554,7 @@ export default function App() {
       setSelectedGroup({ id: docRef.id, ...newGroup });
       setView('group_detail');
     } catch (e) { 
-      alert("Erro ao criar grupo / Error creating group");
+      toast.error("Erro ao criar grupo / Error creating group");
       console.error(e);
     }
   };
@@ -847,7 +847,7 @@ export default function App() {
       const provider = new GoogleAuthProvider(); 
       await signInWithPopup(auth, provider); 
     } catch (error) { 
-      alert("Erro Google / Google error"); 
+      toast.error("Erro Google / Google error"); 
       console.error(error);
     } 
   };
@@ -877,7 +877,7 @@ export default function App() {
       await deleteDoc(doc(db, USERS_COLLECTION, user.uid)); 
       await deleteUser(auth.currentUser); 
     } catch (error) { 
-      alert("Erro. Saia e entre novamente / Error. Logout and login again"); 
+      toast.error("Erro. Saia e entre novamente / Error. Logout and login again"); 
       setLoading(false); 
       console.error(error);
     }
@@ -2345,7 +2345,7 @@ function UploadScreen({ onPost, onCancel, userProfile }) {
     const maxSizeInBytes = 100 * 1024 * 1024; 
     
     if (file.size > maxSizeInBytes) {
-      alert("O arquivo é muito grande! O limite é 100MB.");
+      toast.error("O arquivo é muito grande! O limite é 100MB.");
       return;
     }
 
@@ -2360,7 +2360,7 @@ function UploadScreen({ onPost, onCancel, userProfile }) {
         // 3. LIMITE DE TEMPO (10 Segundos)
         // Aqui é onde você insere o código novo, DENTRO da lógica de vídeo
         if (video.duration > 10) {
-          alert("Vídeo muito longo! O limite é 10 segundos para não virar palestra.");
+          toast.error("Vídeo muito longo! O limite é 10 segundos para não virar palestra.");
           return;
         }
         

@@ -1,5 +1,6 @@
 import React from 'react';
 import { X, Bell, CheckCircle } from 'lucide-react';
+import { toast } from 'react-hot-toast';
 import { NOTIFICATION_GUIDES, detectBrowser, requestNotificationPermission } from '../utils/notificationUtils'; // <--- Importei a função aqui
 import { auth } from '../config/firebase'; // <--- Importei o auth para pegar o ID do usuário
 
@@ -18,7 +19,7 @@ const NotificationGuideModal = ({ isOpen, onClose, currentPermission }) => {
     const success = await requestNotificationPermission(uid);
     
     if (success) {
-      alert("Notificações ativadas com sucesso! 🔔");
+      toast.success("Notificações ativadas com sucesso! 🔔");
       onClose();
       window.location.reload(); // Recarrega para atualizar o status
     }
