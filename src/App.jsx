@@ -91,52 +91,38 @@ import NotificationGuideModal from './components/NotificationGuideModal';
 // ============================================================================
 // VERSÃO DO APP
 // ============================================================================
-const APP_VERSION = "v1.3.5 (Beta)";
+const APP_VERSION = "v1.3.6 (Beta)";
 
 // ============================================================================
 // COMPONENTE DE VIDEO PLAYER (ESTILO INSTAGRAM)
 // ============================================================================
 
-function VideoPlayer({ src, activeFilter }) {
+function VideoPlayer({ src, activeFilter, hasAudio = true }) { // Recebe hasAudio
   const videoRef = useRef(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [isMuted, setIsMuted] = useState(true); // Começa mudo para permitir autoplay
-  const [showControls, setShowControls] = useState(false); // Para animação de play/pause
+  const [isMuted, setIsMuted] = useState(true); 
+  const [showControls, setShowControls] = useState(false); 
 
   useEffect(() => {
-    const options = {
-      root: null,
-      rootMargin: '0px',
-      threshold: 0.6 // Só toca se 60% do vídeo estiver visível
-    };
-
+    const options = { root: null, rootMargin: '0px', threshold: 0.6 };
     const observer = new IntersectionObserver((entries) => {
       entries.forEach((entry) => {
         if (entry.isIntersecting) {
-          // Entrou na tela: Toca
-          videoRef.current.play().catch(error => {
-            console.log("Autoplay bloqueado pelo navegador:", error);
-          });
+          videoRef.current.play().catch(e => console.log("Autoplay bloqueado", e));
           setIsPlaying(true);
         } else {
-          // Saiu da tela: Pausa
           videoRef.current.pause();
           setIsPlaying(false);
         }
       });
     }, options);
 
-    if (videoRef.current) {
-      observer.observe(videoRef.current);
-    }
-
-    return () => {
-      if (videoRef.current) observer.unobserve(videoRef.current);
-    };
+    if (videoRef.current) observer.observe(videoRef.current);
+    return () => { if (videoRef.current) observer.unobserve(videoRef.current); };
   }, []);
 
   const togglePlay = (e) => {
-    e.stopPropagation(); // Evita abrir o post se clicar no player
+    e.stopPropagation(); 
     if (videoRef.current.paused) {
       videoRef.current.play();
       setIsPlaying(true);
@@ -144,13 +130,13 @@ function VideoPlayer({ src, activeFilter }) {
       videoRef.current.pause();
       setIsPlaying(false);
     }
-    // Mostra o ícone de play/pause por 1 segundo
     setShowControls(true);
     setTimeout(() => setShowControls(false), 1000);
   };
 
   const toggleMute = (e) => {
     e.stopPropagation();
+    if (!hasAudio) return; // Se não tem áudio, não faz nada
     videoRef.current.muted = !videoRef.current.muted;
     setIsMuted(videoRef.current.muted);
   };
@@ -160,28 +146,25 @@ function VideoPlayer({ src, activeFilter }) {
       <video
         ref={videoRef}
         src={src}
-        className={`w-full h-auto max-h-[500px] object-contain ${activeFilter}`} // Aplica filtro se quiser
+        className={`w-full h-auto max-h-[500px] object-contain ${activeFilter}`} 
         loop
-        muted={true} // Obrigatório para autoplay funcionar
-        playsInline // Obrigatório para iOS não abrir em tela cheia
+        muted={true} 
+        playsInline 
       />
 
-      {/* Ícone de Mute (Canto inferior direito) */}
-      <button 
-        onClick={toggleMute}
-        className="absolute bottom-3 right-3 bg-black/50 p-2 rounded-full text-white hover:bg-black/70 transition-colors backdrop-blur-sm z-10"
-      >
-        {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-      </button>
+      {/* SÓ MOSTRA O BOTÃO SE O VÍDEO TIVER ÁUDIO ORIGINAL */}
+      {hasAudio && (
+        <button 
+          onClick={toggleMute}
+          className="absolute bottom-3 right-3 bg-black/50 p-2 rounded-full text-white hover:bg-black/70 transition-colors backdrop-blur-sm z-10"
+        >
+          {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+        </button>
+      )}
 
-      {/* Ícone de Play/Pause (Centralizado, aparece ao clicar) */}
       <div className={`absolute inset-0 flex items-center justify-center transition-opacity duration-300 pointer-events-none ${showControls ? 'opacity-100' : 'opacity-0'}`}>
         <div className="bg-black/40 p-4 rounded-full backdrop-blur-sm">
-          {isPlaying ? (
-            <Pause className="w-8 h-8 text-white fill-current" />
-          ) : (
-            <Play className="w-8 h-8 text-white fill-current" />
-          )}
+          {isPlaying ? <Pause className="w-8 h-8 text-white fill-current" /> : <Play className="w-8 h-8 text-white fill-current" />}
         </div>
       </div>
     </div>
@@ -650,7 +633,7 @@ export default function App() {
    * Cria novo post (COM STREAK E BOOSTS)
    * Creates new post (WITH STREAK AND BOOSTS)
    */
-  const handlePost = async (mediaContent, caption, type = 'image') => {
+  const handlePost = async (mediaContent, caption, type = 'image', muteVideo = false) => {
     if (!mediaContent) return;
     
     // Configurações do Cloudinary
@@ -701,7 +684,8 @@ export default function App() {
         uid: user.uid, 
         image: finalMediaUrl, 
         mediaType: type,
-        caption: caption, 
+        caption: caption,
+        hasAudio: !muteVideo, // Se muteVideo é true, hasAudio é false
         timestamp: serverTimestamp(), 
         likes: [], 
         comments: [] 
@@ -2147,7 +2131,7 @@ function PostCard({ post, author, usersMap, currentUserUid, onLike, onComment, o
         <div className={`relative bg-black flex items-center justify-center overflow-hidden min-h-[300px] rounded-2xl border border-slate-800/50 ${post.mediaType === 'image' ? activeFilter : ''}`}>
           {post.mediaType === 'video' ? (
             // Usa o novo Player Inteligente
-            <VideoPlayer src={post.image} activeFilter={''} />
+            <VideoPlayer src={post.image} activeFilter={''} hasAudio={post.hasAudio !== false} />
           ) : (
             // Imagem normal com arredondamento
             <img 
@@ -2334,6 +2318,7 @@ function UploadScreen({ onPost, onCancel, userProfile }) {
   const [media, setMedia] = useState(null); // Substitui 'image'
   const [mediaType, setMediaType] = useState('image'); // 'image' ou 'video'
   const [caption, setCaption] = useState('');
+  const [isMuted, setIsMuted] = useState(false);
   const fileInputRef = useRef(null);
   
   const handleFileChange = async (e) => {
@@ -2391,7 +2376,7 @@ function UploadScreen({ onPost, onCancel, userProfile }) {
         <span className="font-bold text-white">Registrar Fumaça</span>
         <button 
           // Passamos o tipo junto com a mídia
-          onClick={() => onPost(media, caption, mediaType)} 
+          onClick={() => onPost(media, caption, mediaType, isMuted)} 
           disabled={!media} 
           className={`font-bold px-4 py-1.5 rounded-full transition-colors ${
             media 
@@ -2420,15 +2405,35 @@ function UploadScreen({ onPost, onCancel, userProfile }) {
             
             {/* PRÉ-VISUALIZAÇÃO CORRIGIDA */}
             {mediaType === 'video' ? (
-              <video 
-                // O segredo está aqui: Se for um Arquivo (File), cria uma URL temporária. Se for string (link), usa direto.
-                src={media instanceof File ? URL.createObjectURL(media) : media} 
-                className="max-w-full max-h-full object-contain" 
-                controls 
-                autoPlay 
-                loop
-                playsInline
-              />
+              <>
+                <video 
+                  src={media instanceof File ? URL.createObjectURL(media) : media} 
+                  className="max-w-full max-h-full object-contain" 
+                  controls={false} // Tira os controles nativos pra usar o nosso botão
+                  autoPlay 
+                  loop
+                  muted={isMuted} // O vídeo obedece ao estado
+                  playsInline
+                />
+                
+                {/* BOTÃO DE MUTE VISUAL */}
+                <button 
+                  onClick={() => setIsMuted(!isMuted)}
+                  className="absolute bottom-4 right-4 bg-black/60 backdrop-blur-md p-3 rounded-full text-white hover:bg-slate-800 transition-all z-20 border border-white/10"
+                >
+                  {isMuted ? (
+                    <div className="flex items-center gap-2">
+                      <VolumeX className="w-5 h-5 text-red-500" />
+                      <span className="text-xs font-bold">Sem Som</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <Volume2 className="w-5 h-5 text-green-500" />
+                      <span className="text-xs font-bold">Com Som</span>
+                    </div>
+                  )}
+                </button>
+              </>
             ) : (
               <img src={media} className="max-w-full max-h-full object-contain" alt="Preview" />
             )}
